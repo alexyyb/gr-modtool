@@ -49,7 +49,12 @@ class ModToolNewModule(ModTool):
             sys.exit(2)
 
     def run(self):
-        """ Go, go, go! """
+        """
+        * Unpack the tar.bz2 to the new locations
+        * Remove the bz2
+        * Open all files, rename howto and HOWTO to the module name
+        * Rename files and directories that contain the word howto
+        """
         print "Creating directory..."
         try:
             os.mkdir(self._dir)
@@ -65,19 +70,17 @@ class ModToolNewModule(ModTool):
         tar.close()
         os.unlink('tmp.tar.bz2')
         print "Replacing occurences of 'howto' to '%s'..." % self._info['modname'],
-        skip_dir_re = re.compile('^..cmake|^..apps|^..grc|doxyxml')
         for root, dirs, files in os.walk('.'):
-            if skip_dir_re.search(root):
-                continue
             for filename in files:
                 f = os.path.join(root, filename)
                 s = open(f, 'r').read()
                 s = s.replace('howto', self._info['modname'])
                 s = s.replace('HOWTO', self._info['modname'].upper())
                 open(f, 'w').write(s)
-                if filename[0:5] == 'howto':
-                    newfilename = filename.replace('howto', self._info['modname'])
-                    os.rename(f, os.path.join(root, newfilename))
+                if filename.find('howto') != -1:
+                    os.rename(f, os.path.join(root, filename.replace('howto', self._info['modname'])))
+            if os.path.basename(root) == 'howto':
+                os.rename(root, os.path.join(os.path.dirname(root), self._info['modname']))
         print "Done."
         print "Use 'gr_modtool add' to add a new block to this currently empty module."
 
