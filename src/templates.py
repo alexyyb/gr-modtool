@@ -37,36 +37,34 @@ Templates['generalwork_h'] = """
 		    gr_vector_void_star &output_items);"""
 
 # Header file of a sync/decimator/interpolator block
-Templates['block_h'] = Template("""/* -*- c++ -*- */
+Templates['block_impl_h'] = Template("""/* -*- c++ -*- */
 $license
-#ifndef INCLUDED_${fullblocknameupper}_H
-#define INCLUDED_${fullblocknameupper}_H
+#ifndef INCLUDED_${modnameupper}_${blocknameupper}_IMPL_H
+#define INCLUDED_${modnameupper}_${blocknameupper}_IMPL_H
 
-#include <${modname}_api.h>
-#include <$grblocktype.h>
+#include <${modname}/${blockname}.h>
 
-class $fullblockname;
-typedef boost::shared_ptr<$fullblockname> ${fullblockname}_sptr;
+namespace gr {
+  namespace $modname {
 
-${modnameupper}_API ${fullblockname}_sptr ${modname}_make_$blockname ($arglist);
+    class ${blockname}_impl : public ${blockname}
+    {
+    private:
+      // Nothing to declare in this block.
 
-/*!
- * \\brief <+description+>
- *
- */
-class ${modnameupper}_API $fullblockname : public $grblocktype
-{
-	friend ${modnameupper}_API ${fullblockname}_sptr ${modname}_make_$blockname ($argliststripped);
+    public:
+      ${blockname}_impl($argliststripped);
+      ~${blockname}_impl();
 
-	$fullblockname ($argliststripped);
-
- public:
-	~$fullblockname ();
+      // Where all the action really happens
 
 $workfunc
-};
+    };
 
-#endif /* INCLUDED_${fullblocknameupper}_H */
+  } // namespace $modname
+} // namespace gr
+
+#endif /* INCLUDED_${modnameupper}_${blocknameupper}_IMPL_H */
 
 """)
 
@@ -104,40 +102,51 @@ Templates['generalwork_cpp'] = """general_work (int noutput_items,
 """
 
 # C++ file of a GR block
-Templates['block_cpp'] = Template("""/* -*- c++ -*- */
+Templates['block_impl_cpp'] = Template("""/* -*- c++ -*- */
 $license
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
 #include <gr_io_signature.h>
-#include <$fullblockname.h>
+#include "${blockname}_impl.h"
 
+namespace gr {
+  namespace $modname {
 
-${fullblockname}_sptr
-${modname}_make_$blockname ($argliststripped)
-{
-    return gnuradio::get_initial_sptr(new $fullblockname ($arglistnotypes));
-}
+    ${blockname}::sptr
+    ${blockname}::make($argliststripped)
+    {
+      return gnuradio::get_initial_sptr (new ${blockname}_impl($arglistnotypes));
+    }
 
-
-$fullblockname::$fullblockname ($argliststripped)
-	: $grblocktype ("$blockname",
-		gr_make_io_signature ($inputsig),
-		gr_make_io_signature ($outputsig)$decimation)
-{
+    /*
+     * The private constructor
+     */
+    ${blockname}_impl::${blockname}_impl($argliststripped)
+      : $grblocktype("${blockname}",
+		      gr_make_io_signature($inputsig),
+		      gr_make_io_signature($outputsig)$decimation)
+    {
 $constructorcontent}
 
+    /*
+     * Our virtual destructor.
+     */
+    ${blockname}_impl::~${blockname}_impl()
+    {
+    }
 
-$fullblockname::~$fullblockname ()
-{
-}
+    $workcall
+  } /* namespace $modname */
+} /* namespace gr */
+
 """)
 
 Templates['block_cpp_workcall'] = Template("""
 
-int
-$fullblockname::$workfunc
+    int
+    ${blockname}_impl::$workfunc
 """)
 
 Templates['block_cpp_hierconstructor'] = """
@@ -145,6 +154,47 @@ Templates['block_cpp_hierconstructor'] = """
 	// connect other blocks
 	connect(d_lastblock, 0, self(), 0);
 """
+
+# Block definition header file (for include/)
+Templates['block_def_h'] = Template("""/* -*- c++ -*- */
+$license
+
+#ifndef INCLUDED_${modnameupper}_${blocknameupper}_H
+#define INCLUDED_${modnameupper}_${blocknameupper}_H
+
+#include <${modname}/api.h>
+#include <$grblocktype.h>
+
+namespace gr {
+  namespace $modname {
+
+    /*!
+     * \\brief <+description of block+>
+     * \ingroup block
+     *
+     */
+    class ${modnameupper}_API ${blockname} : virtual public $grblocktype
+    {
+    public:
+       typedef boost::shared_ptr<${blockname}> sptr;
+
+       /*!
+	* \\brief Return a shared_ptr to a new instance of ${modname}::${blockname}.
+	*
+	* To avoid accidental use of raw pointers, ${modname}::${blockname}'s
+	* constructor is in a private implementation
+	* class. ${modname}::${blockname}::make is the public interface for
+	* creating new instances.
+	*/
+       static sptr make($arglist);
+    };
+
+  } // namespace $modname
+} // namespace gr
+
+#endif /* INCLUDED_${modnameupper}_${blocknameupper}_H */
+
+""")
 
 # Header file for QA
 Templates['qa_cmakeentry'] = Template("""
@@ -157,17 +207,53 @@ GR_ADD_TEST($basename $basename)
 Templates['qa_cpp'] = Template("""/* -*- c++ -*- */
 $license
 
-#include <boost/test/unit_test.hpp>
+#include "qa_square2_ff.h"
+#include <cppunit/TestAssert.h>
 
-BOOST_AUTO_TEST_CASE(qa_${fullblockname}_t1){
-    BOOST_CHECK_EQUAL(2 + 2, 4);
-    // BOOST_* test macros <+here+>
-}
+#include <$modname/$blockname.h>
 
-BOOST_AUTO_TEST_CASE(qa_${fullblockname}_t2){
-    BOOST_CHECK_EQUAL(2 + 2, 4);
-    // BOOST_* test macros <+here+>
-}
+namespace gr {
+  namespace $modname {
+
+    void
+    qa_${blockname}::t1()
+    {
+        // Put test here
+    }
+
+  } /* namespace $modname */
+} /* namespace gr */
+
+""")
+
+# Header file for QA
+Templates['qa_h'] = Template("""/* -*- c++ -*- */
+$license
+
+#ifndef _QA_${blocknameupper}_H_
+#define _QA_${blocknameupper}_H_
+
+#include <cppunit/extensions/HelperMacros.h>
+#include <cppunit/TestCase.h>
+
+namespace gr {
+  namespace $modname {
+
+    class qa_${blockname} : public CppUnit::TestCase
+    {
+    public:
+      CPPUNIT_TEST_SUITE(qa_${blockname});
+      CPPUNIT_TEST(t1);
+      CPPUNIT_TEST_SUITE_END();
+
+    private:
+      void t1();
+    };
+
+  } /* namespace $modname */
+} /* namespace gr */
+
+#endif /* _QA_${blocknameupper}_H_ */
 
 """)
 
@@ -177,7 +263,7 @@ $license
 #
 
 from gnuradio import gr, gr_unittest
-import ${modname}$swig
+import ${modname}_swig as ${modname}
 
 class qa_$blockname (gr_unittest.TestCase):
 
@@ -194,10 +280,11 @@ class qa_$blockname (gr_unittest.TestCase):
 
 
 if __name__ == '__main__':
-    gr_unittest.main ()
+    gr_unittest.run(qa_${blockname}, "qa_${blockname}.xml")
 """)
 
 
+# Hierarchical block, Python version
 Templates['hier_python'] = Template('''$license
 
 from gnuradio import gr
@@ -211,47 +298,62 @@ class $blockname(gr.hier_block2):
 				gr.io_signature($inputsig),  # Input signature
 				gr.io_signature($outputsig)) # Output signature
 
-        # Define blocks
+        # Define blocks and connect them
         self.connect()
 
 ''')
 
-# Implementation file, C++ header
-Templates['impl_h'] = Template('''/* -*- c++ -*- */
+# Non-block file, C++ header
+Templates['noblock_h'] = Template('''/* -*- c++ -*- */
 $license
-#ifndef INCLUDED_QA_${fullblocknameupper}_H
-#define INCLUDED_QA_${fullblocknameupper}_H
+#ifndef INCLUDED_${modnameupper}_${blocknameupper}_H
+#define INCLUDED_${modnameupper}_${blocknameupper}_H
 
-class $fullblockname
-{
- public:
-	$fullblockname($arglist);
-	~$fullblockname();
+#include <$modname/api.h>
+
+namespace gr {
+  namespace $modname {
+    class ${modnameupper}_API $blockname
+    {
+        $blockname({$arglist});
+        ~$blockname();
+        private:
+    };
 
 
- private:
 
-};
+  }  /* namespace $modname */
+}  /* namespace gr */
 
-#endif /* INCLUDED_${fullblocknameupper}_H */
+
+#endif /* INCLUDED_${modnameupper}_${blocknameupper}_H */
 
 ''')
 
-# Implementation file, C++ source
-Templates['impl_cpp'] = Template('''/* -*- c++ -*- */
+# Non-block file, C++ source
+Templates['noblock_cpp'] = Template('''/* -*- c++ -*- */
 $license
 
-#include <$fullblockname.h>
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
 
+#include <$modname/$blockname.h>
 
-$fullblockname::$fullblockname($argliststripped)
-{
-}
+namespace gr {
+  namespace ${modname} {
 
+    $blockname::$blockname($argliststripped)
+    {
+    }
 
-$fullblockname::~$fullblockname()
-{
-}
+    $blockname::~$blockname()
+    {
+    }
+
+  }  /* namespace $blockname */
+}  /* namespace gr */
+
 ''')
 
 

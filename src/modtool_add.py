@@ -17,7 +17,7 @@ class ModToolAdd(ModTool):
     name = 'add'
     aliases = ('insert',)
     _block_types = ('sink', 'source', 'sync', 'decimator', 'interpolator',
-                    'general', 'hiercpp', 'hierpython', 'impl')
+                    'general', 'hiercpp', 'hierpython', 'noblock')
     def __init__(self):
         ModTool.__init__(self)
         self._info['inputsig'] = "<+MIN_IN+>, <+MAX_IN+>, sizeof (<+float+>)"
@@ -72,12 +72,7 @@ class ModToolAdd(ModTool):
             sys.exit(2)
         print "Block/code identifier: " + self._info['blockname']
 
-        self._info['prefix'] = self._info['modname']
-        if self._info['blocktype'] == 'impl':
-            self._info['prefix'] += 'i'
-        self._info['fullblockname'] = self._info['prefix'] + '_' + self._info['blockname']
-        print "Full block/code identifier is: " + self._info['fullblockname']
-
+        self._info['fullblockname'] = self._info['modname'] + '_' + self._info['blockname']
         self._info['license'] = self.setup_choose_license()
 
         if options.argument_list is not None:
@@ -85,7 +80,7 @@ class ModToolAdd(ModTool):
         else:
             self._info['arglist'] = raw_input('Enter valid argument list, including default arguments: ')
 
-        if not (self._info['blocktype'] in ('impl') or self._skip_subdirs['python']):
+        if not (self._info['blocktype'] in ('noblock') or self._skip_subdirs['python']):
             self._add_py_qa = options.add_python_qa
             if self._add_py_qa is None:
                 self._add_py_qa = (raw_input('Add Python QA code? [Y/n] ').lower() != 'n')
@@ -148,41 +143,56 @@ class ModToolAdd(ModTool):
 
     def _run_lib(self):
         """ Do everything that needs doing in the subdir 'lib' and 'include'.
-        - add .cc and .h files
+        - add *_impl.{cc,} files
         - include them into CMakeLists.txt
+        - add include/MODNAME/*.h file
+        - add that to CMakeLists.txt
         - check if C++ QA code is req'd
-        - if yes, create qa_*.{cc,h} and add them to CMakeLists.txt
+        - if yes, create qa_*.{cc,h} and add them to CMakeLists.txt and the test_*.cc file
         """
         print "Traversing lib..."
-        fname_h = self._info['fullblockname'] + '.h'
-        fname_cc = self._info['fullblockname'] + '.cc'
         if self._info['blocktype'] in ('source', 'sink', 'sync', 'decimator',
                                        'interpolator', 'general', 'hiercpp'):
-            self._write_tpl('block_h', 'include', fname_h)
-            self._write_tpl('block_cpp', 'lib', fname_cc)
-        elif self._info['blocktype'] == 'impl':
-            self._write_tpl('impl_h', 'include', fname_h)
-            self._write_tpl('impl_cpp', 'lib', fname_cc)
+            fname_impl_h = self._info['blockname'] + '_impl.h'
+            fname_cc = self._info['blockname'] + '_impl.cc'
+            fname_h = self._info['blockname'] + '.h'
+            self._write_tpl('block_impl_h', 'lib', fname_impl_h)
+            self._write_tpl('block_impl_cpp', 'lib', fname_cc)
+            self._write_tpl('block_def_h', os.path.join('include', self._info['modname']),
+                            fname_h)
+        elif self._info['blocktype'] == 'noblock':
+            fname_h = self._info['blockname'] + '.h'
+            fname_cc = self._info['blockname'] + '.cc'
+            self._write_tpl('noblock_h', os.path.join('include', self._info['modname']),
+                            self._info['blockname'] + '.h')
+            self._write_tpl('noblock_cpp', 'lib', self._info['blockname'] + '.cc')
         if not self.options.skip_cmakefiles:
             ed = CMakeFileEditor('lib/CMakeLists.txt')
             ed.append_value('add_library', fname_cc)
             ed.write()
-            ed = CMakeFileEditor('include/CMakeLists.txt', '\n    ')
+            ed = CMakeFileEditor(os.path.join(self._info['includedir'], 'CMakeLists.txt'), '\n    ')
             ed.append_value('install', fname_h, 'DESTINATION[^()]+')
             ed.write()
 
         if not self._add_cc_qa:
             return
-        fname_qa_cc = 'qa_%s' % fname_cc
+        fname_qa_cc = 'qa_%s.cc' % self._info['blockname']
+        fname_qa_h  = 'qa_%s.h'  % self._info['blockname']
         self._write_tpl('qa_cpp', 'lib', fname_qa_cc)
+        self._write_tpl('qa_h', 'lib', fname_qa_h)
         if not self.options.skip_cmakefiles:
-            open('lib/CMakeLists.txt', 'a').write(Template.substitute(Templates['qa_cmakeentry'],
-                                          {'basename': os.path.splitext(fname_qa_cc)[0],
-                                           'filename': fname_qa_cc,
-                                           'modname': self._info['modname']}))
-            ed = CMakeFileEditor('lib/CMakeLists.txt')
-            ed.remove_double_newlines()
-            ed.write()
+            append_re_line_sequence('lib/CMakeLists.txt',
+                                    '\$\{CMAKE_CURRENT_SOURCE_DIR\}/qa_%s.cc.*\n' % self._info['modname'],
+                                    '  ${CMAKE_CURRENT_SOURCE_DIR}/qa_%s.cc' % self._info['blockname'])
+            append_re_line_sequence('lib/qa_%s.cc' % self._info['modname'],
+                                    '#include.*\n',
+                                    '#include "%s"' % fname_qa_h)
+            append_re_line_sequence('lib/qa_%s.cc' % self._info['modname'],
+                                    '(addTest.*suite.*\n|new CppUnit.*TestSuite.*\n)',
+                                    '\ts->addTest(gr::%s::qa_%s::suite());' % (self._info['modname'],
+                                                                               self._info['blockname'])
+                                    )
+
 
     def _run_swig(self):
         """ Do everything that needs doing in the subdir 'swig'.
@@ -195,18 +205,18 @@ class ModToolAdd(ModTool):
             return
         fname_mainswig = os.path.join('swig', fname_mainswig)
         print "Editing %s..." % fname_mainswig
-        swig_block_magic_str = '\nGR_SWIG_BLOCK_MAGIC(%s,%s);\n%%include "%s"\n' % (
+        swig_block_magic_str = '\n%%include "%s/%s.h"\nGR_SWIG_BLOCK_MAGIC2(%s, %s);\n' % (
                                    self._info['modname'],
                                    self._info['blockname'],
-                                   self._info['fullblockname'] + '.h')
+                                   self._info['modname'],
+                                   self._info['blockname'])
+        include_str = '#include "%s/%s.h"' % (self._info['modname'], self._info['blockname'])
         if re.search('#include', open(fname_mainswig, 'r').read()):
-            append_re_line_sequence(fname_mainswig, '^#include.*\n',
-                    '#include "%s.h"' % self._info['fullblockname'])
+            append_re_line_sequence(fname_mainswig, '^#include.*\n', include_str)
         else: # I.e., if the swig file is empty
             oldfile = open(fname_mainswig, 'r').read()
             regexp = re.compile('^%\{\n', re.MULTILINE)
-            oldfile = regexp.sub('%%{\n#include "%s.h"\n' % self._info['fullblockname'],
-                                 oldfile, count=1)
+            oldfile = regexp.sub('%%{\n%s\n' % include_str, oldfile, count=1)
             open(fname_mainswig, 'w').write(oldfile)
         open(fname_mainswig, 'a').write(swig_block_magic_str)
 
@@ -218,7 +228,7 @@ class ModToolAdd(ModTool):
         - include in CMakeLists.txt
         """
         print "Traversing python..."
-        fname_py_qa = 'qa_' + self._info['fullblockname'] + '.py'
+        fname_py_qa = 'qa_' + self._info['blockname'] + '.py'
         self._write_tpl('qa_python', 'python', fname_py_qa)
         os.chmod(os.path.join('python', fname_py_qa), 0755)
         print "Editing python/CMakeLists.txt..."
@@ -238,6 +248,9 @@ class ModToolAdd(ModTool):
         ed = CMakeFileEditor('python/CMakeLists.txt')
         ed.append_value('GR_PYTHON_INSTALL', fname_py, 'DESTINATION[^()]+')
         ed.write()
+        append_re_line_sequence('python/__init__.py',
+                                '(^from.*import.*\n|# import any pure.*\n)',
+                                'from %s import *' % self._info['blockname'])
 
     def _run_grc(self):
         """ Do everything that needs doing in the subdir 'grc' to add

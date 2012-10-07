@@ -15,7 +15,7 @@ class CodeGenerator(object):
                 'interpolator': 'gr_sync_interpolator',
                 'general': 'gr_block',
                 'hiercpp': 'gr_hier_block2',
-                'impl': '',
+                'noblock': '',
                 'hierpython': ''}
 
     def strip_default_values(self, string):
@@ -34,14 +34,14 @@ class CodeGenerator(object):
         can use to fill in the blanks, then it uses Python's
         Template() function to create the file contents. '''
         # Licence
-        if tpl_id in ('block_h', 'block_cpp', 'qa_h', 'qa_cpp', 'impl_h', 'impl_cpp'):
+        if tpl_id in ('block_impl_h', 'block_impl_cpp', 'block_def_h', 'qa_h', 'qa_cpp', 'noblock_h', 'noblock_cpp'):
             kwargs['license'] = str_to_fancyc_comment(kwargs['license'])
         elif tpl_id in ('qa_python', 'hier_python'):
             kwargs['license'] = str_to_python_comment(kwargs['license'])
         # Standard values for templates
         kwargs['argliststripped'] = self.strip_default_values(kwargs['arglist'])
         kwargs['arglistnotypes'] = self.strip_arg_types(kwargs['arglist'])
-        kwargs['fullblocknameupper'] = kwargs['fullblockname'].upper()
+        kwargs['blocknameupper'] = kwargs['blockname'].upper()
         kwargs['modnameupper'] = kwargs['modname'].upper()
         kwargs['grblocktype'] = self.grtypelist[kwargs['blocktype']]
         # Specials for qa_python
@@ -49,7 +49,7 @@ class CodeGenerator(object):
         if kwargs['blocktype'] != 'hierpython':
             kwargs['swig'] = '_swig'
         # Specials for block_h
-        if tpl_id == 'block_h':
+        if tpl_id == 'block_impl_h':
             if kwargs['blocktype'] == 'general':
                 kwargs['workfunc'] = Templates['generalwork_h']
             elif kwargs['blocktype'] == 'hiercpp':
@@ -57,7 +57,7 @@ class CodeGenerator(object):
             else:
                 kwargs['workfunc'] = Templates['work_h']
         # Specials for block_cpp
-        if tpl_id == 'block_cpp':
+        if tpl_id == 'block_impl_cpp':
             return self._get_block_cpp(kwargs)
         # All other ones
         return Templates[tpl_id].substitute(kwargs)
@@ -66,20 +66,18 @@ class CodeGenerator(object):
         '''This template is a bit fussy, so it needs some extra attention.'''
         kwargs['decimation'] = ''
         kwargs['constructorcontent'] = ''
-        kwargs['sptr'] = kwargs['fullblockname'] + '_sptr'
+        kwargs['workfunc'] = Templates['work_cpp']
+        kwargs['workcall'] = Templates['block_cpp_workcall'].substitute(kwargs)
         if kwargs['blocktype'] == 'decimator':
             kwargs['decimation'] = ", <+decimation+>"
         elif kwargs['blocktype'] == 'interpolator':
             kwargs['decimation'] = ", <+interpolation+>"
-        if kwargs['blocktype'] == 'general':
+        elif kwargs['blocktype'] == 'general':
             kwargs['workfunc'] = Templates['generalwork_cpp']
+            kwargs['workcall'] = Templates['block_cpp_workcall'].substitute(kwargs)
         elif kwargs['blocktype'] == 'hiercpp':
             kwargs['workfunc'] = ''
+            kwargs['workcall'] = ''
             kwargs['constructorcontent'] = Templates['block_cpp_hierconstructor']
-            kwargs['sptr'] = 'gnuradio::get_initial_sptr'
-            return Templates['block_cpp'].substitute(kwargs)
-        else:
-            kwargs['workfunc'] = Templates['work_cpp']
-        return Templates['block_cpp'].substitute(kwargs) + \
-               Templates['block_cpp_workcall'].substitute(kwargs)
+        return Templates['block_impl_cpp'].substitute(kwargs)
 

@@ -44,7 +44,7 @@ class ModTool(object):
                 help="Don't do anything in the swig/ subdirectory.")
         ogroup.add_option("--skip-python", action="store_true", default=False,
                 help="Don't do anything in the python/ subdirectory.")
-        ogroup.add_option("--skip-grc", action="store_true", default=True,
+        ogroup.add_option("--skip-grc", action="store_true", default=False,
                 help="Don't do anything in the grc/ subdirectory.")
         parser.add_option_group(ogroup)
         return parser
@@ -68,6 +68,9 @@ class ModTool(object):
         if options.skip_swig:
             print "Force-skipping 'swig'."
             self._skip_subdirs['swig'] = True
+        if options.skip_grc:
+            print "Force-skipping 'grc'."
+            self._skip_subdirs['grc'] = True
 
         if options.module_name is not None:
             self._info['modname'] = options.module_name
@@ -75,6 +78,7 @@ class ModTool(object):
             self._info['modname'] = get_modname()
         print "GNU Radio module name identified: " + self._info['modname']
         self._info['blockname'] = options.block_name
+        self._info['includedir'] = os.path.join('include', self._info['modname'])
         self.options = options
 
 
