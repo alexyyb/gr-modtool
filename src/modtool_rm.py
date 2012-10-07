@@ -48,15 +48,22 @@ class ModToolRemove(ModTool):
     def run(self):
         """ Go, go, go! """
         def _remove_cc_test_case(filename=None, ed=None):
-            """ Special function that removes the occurrences of a qa*.cc file
-            from the CMakeLists.txt. """
+            """ Special function that removes the occurrences of a qa*.{cc,h} file
+            from the CMakeLists.txt and the qa_$modname.cc. """
             if filename[:2] != 'qa':
                 return
-            filebase = os.path.splitext(filename)[0]
-            ed.delete_entry('add_executable', filebase)
-            ed.delete_entry('target_link_libraries', filebase)
-            ed.delete_entry('GR_ADD_TEST', filebase)
-            ed.remove_double_newlines()
+            (base, ext) = os.path.splitext(filename)
+            if ext == '.h':
+                remove_pattern_from_file(os.path.join('lib',
+                                                      'qa_%s.cc' % self._info['modname']),
+                                         '^#include "%s"\s*$' % filename)
+                remove_pattern_from_file(os.path.join('lib',
+                                                      'qa_%s.cc' % self._info['modname']),
+                                         '^\s*s->addTest\(gr::%s::%s::suite\(\)\);\s*$' % (self._info['modname'], base))
+            elif ext == '.cc':
+                ed.remove_value('list',
+                                '\$\{CMAKE_CURRENT_SOURCE_DIR\}/%s' % filename,
+                                'APPEND test_%s_sources' % self._info['modname'])
 
         def _remove_py_test_case(filename=None, ed=None):
             """ Special function that removes the occurrences of a qa*.py file
@@ -67,28 +74,25 @@ class ModToolRemove(ModTool):
             ed.delete_entry('GR_ADD_TEST', filebase)
             ed.remove_double_newlines()
 
-        def _make_swig_regex(filename):
-            filebase = os.path.splitext(filename)[0]
-            pyblockname = filebase.replace(self._info['modname'] + '_', '')
-            regexp = r'^\s*GR_SWIG_BLOCK_MAGIC\(%s,\s*%s\);\s*%%include\s*"%s"\s*' % \
-                    (self._info['modname'], pyblockname, filename)
-            return regexp
-
         if not self._skip_subdirs['lib']:
             self._run_subdir('lib', ('*.cc', '*.h'), ('add_library',),
                              cmakeedit_func=_remove_cc_test_case)
         if not self._skip_subdirs['include']:
-            incl_files_deleted = self._run_subdir('include', ('*.cc', '*.h'), ('install',),
+            incl_files_deleted = self._run_subdir(self._info['includedir'], ('*.h',), ('install',),
                              cmakeedit_func=_remove_cc_test_case)
         if not self._skip_subdirs['swig']:
+            print "Checking if lines have to be removed from %s..." % self._get_mainswigfile()
             for f in incl_files_deleted:
-                remove_pattern_from_file('swig/'+self._get_mainswigfile(), _make_swig_regex(f))
-                remove_pattern_from_file('swig/'+self._get_mainswigfile(), '#include "%s".*\n' % f)
+                remove_pattern_from_file('swig/'+self._get_mainswigfile(),
+                                         'GR_SWIG_BLOCK_MAGIC2\(%s,\s*%s\);' % (self._info['modname'],
+                                                                                os.path.splitext(f)[0]))
+                remove_pattern_from_file('swig/'+self._get_mainswigfile(), '(#|%%)include "%s/%s".*\n' % (self._info['modname'], f))
         if not self._skip_subdirs['python']:
             py_files_deleted = self._run_subdir('python', ('*.py',), ('GR_PYTHON_INSTALL',),
                                                 cmakeedit_func=_remove_py_test_case)
             for f in py_files_deleted:
-                remove_pattern_from_file('python/__init__.py', '.*import.*%s.*' % f[:-3])
+                remove_pattern_from_file('python/__init__.py', '.*import\s+%s.*' % f[:-3])
+                remove_pattern_from_file('python/__init__.py', '.*from\s+%s\s+import.*\n' % f[:-3])
         if not self._skip_subdirs['grc']:
             self._run_subdir('grc', ('*.xml',), ('install',))
 

@@ -35,7 +35,7 @@ def remove_pattern_from_file(filename, pattern):
     """ Remove all occurrences of a given pattern from a file. """
     oldfile = open(filename, 'r').read()
     pattern = re.compile(pattern, re.MULTILINE)
-    open(filename, 'w').write(re.sub(pattern, '', oldfile))
+    open(filename, 'w').write(pattern.sub('', oldfile))
 
 def str_to_fancyc_comment(text):
     """ Return a string as a C formatted comment. """
