@@ -51,7 +51,7 @@ def str_to_python_comment(text):
     return re.compile('^', re.MULTILINE).sub('# ', text)
 
 def get_modname():
-    """ Grep the current module's name from gnuradio.project """
+    """ Grep the current module's name from gnuradio.project or CMakeLists.txt """
     try:
         prfile = open('gnuradio.project', 'r').read()
         regexp = r'projectname\s*=\s*([a-zA-Z0-9-_]+)$'
@@ -60,8 +60,8 @@ def get_modname():
         pass
     # OK, there's no gnuradio.project. So, we need to guess.
     cmfile = open('CMakeLists.txt', 'r').read()
-    regexp = r'project\s*\(\s*gr-([a-zA-Z0-9-_]+)\s*CXX'
-    return re.search(regexp, cmfile, flags=re.MULTILINE).group(1).strip()
+    regexp = r'(project\s*\(\s*|GR_REGISTER_COMPONENT\(")gr-([a-zA-Z1-9-_]+)(\s*CXX|" ENABLE)'
+    return re.search(regexp, cmfile, flags=re.MULTILINE).group(2).strip()
 
 def get_class_dict():
     " Return a dictionary of the available commands in the form command->class "

@@ -89,7 +89,7 @@ class ModTool(object):
 
     def _check_directory(self, directory):
         """ Guesses if dir is a valid GNU Radio module directory by looking for
-        gnuradio.project and at least one of the subdirs lib/, python/ and swig/.
+        CMakeLists.txt and at least one of the subdirs lib/, python/ and swig/.
         Changes the directory, if valid. """
         has_makefile = False
         try:
@@ -101,7 +101,7 @@ class ModTool(object):
         for f in files:
             if (os.path.isfile(f) and
                     f == 'CMakeLists.txt' and
-                    re.search('find_package\(GnuradioCore\)', open(f).read()) is not None):
+                    re.search('(find_package\(GnuradioCore\)|GR_REGISTER_COMPONENT)', open(f).read()) is not None):
                 has_makefile = True
             elif os.path.isdir(f):
                 if (f in self._has_subdirs.keys()):
