@@ -26,5 +26,5 @@ import base64
 import tarfile
 from datetime import datetime
 from optparse import OptionParser, OptionGroup
-from string import Template
+import Cheetah.Template
 

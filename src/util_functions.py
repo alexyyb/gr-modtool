@@ -37,19 +37,6 @@ def remove_pattern_from_file(filename, pattern):
     pattern = re.compile(pattern, re.MULTILINE)
     open(filename, 'w').write(pattern.sub('', oldfile))
 
-def str_to_fancyc_comment(text):
-    """ Return a string as a C formatted comment. """
-    l_lines = text.splitlines()
-    outstr = "/* " + l_lines[0] + "\n"
-    for line in l_lines[1:]:
-        outstr += " * " + line + "\n"
-    outstr += " */\n"
-    return outstr
-
-def str_to_python_comment(text):
-    """ Return a string as a Python formatted comment. """
-    return re.compile('^', re.MULTILINE).sub('# ', text)
-
 def get_modname():
     """ Grep the current module's name from gnuradio.project or CMakeLists.txt """
     try:

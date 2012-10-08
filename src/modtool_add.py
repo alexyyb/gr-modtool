@@ -9,7 +9,7 @@ from util_functions import append_re_line_sequence
 from cmakefile_editor import CMakeFileEditor
 from modtool_base import ModTool
 from templates import Templates
-from code_generator import CodeGenerator
+from code_generator import get_template
 
 ### Add new block module #####################################################
 class ModToolAdd(ModTool):
@@ -24,8 +24,6 @@ class ModToolAdd(ModTool):
         self._info['outputsig'] = "<+MIN_OUT+>, <+MAX_OUT+>, sizeof (<+float+>)"
         self._add_cc_qa = False
         self._add_py_qa = False
-        self.tpl = CodeGenerator()
-
 
     def setup_parser(self):
         parser = ModTool.setup_parser(self)
@@ -45,7 +43,6 @@ class ModToolAdd(ModTool):
                 help="If given, only source files are written, but CMakeLists.txt files are left unchanged.")
         parser.add_option_group(ogroup)
         return parser
-
 
     def setup(self):
         ModTool.setup(self)
@@ -117,7 +114,7 @@ class ModToolAdd(ModTool):
     def _write_tpl(self, tpl, path, fname):
         """ Shorthand for writing a substituted template to a file"""
         print "Adding file '%s'..." % fname
-        open(os.path.join(path, fname), 'w').write(self.tpl.get_template(tpl, **self._info))
+        open(os.path.join(path, fname), 'w').write(get_template(tpl, **self._info))
 
     def run(self):
         """ Go, go, go. """

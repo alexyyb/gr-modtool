@@ -26,7 +26,7 @@ import base64
 import tarfile
 from datetime import datetime
 from optparse import OptionParser, OptionGroup
-from string import Template
+import Cheetah.Template
 
 ### Utility functions ########################################################
 def get_command_from_argv(possible_cmds):
@@ -62,19 +62,6 @@ def remove_pattern_from_file(filename, pattern):
     pattern = re.compile(pattern, re.MULTILINE)
     open(filename, 'w').write(pattern.sub('', oldfile))
 
-def str_to_fancyc_comment(text):
-    """ Return a string as a C formatted comment. """
-    l_lines = text.splitlines()
-    outstr = "/* " + l_lines[0] + "\n"
-    for line in l_lines[1:]:
-        outstr += " * " + line + "\n"
-    outstr += " */\n"
-    return outstr
-
-def str_to_python_comment(text):
-    """ Return a string as a Python formatted comment. """
-    return re.compile('^', re.MULTILINE).sub('# ', text)
-
 def get_modname():
     """ Grep the current module's name from gnuradio.project or CMakeLists.txt """
     try:
@@ -104,7 +91,7 @@ def get_class_dict():
 ### Templates ################################################################
 Templates = {}
 # Default licence
-Templates['defaultlicense'] = """
+Templates['defaultlicense'] = '''
 Copyright %d <+YOU OR YOUR COMPANY+>.
 
 This is free software; you can redistribute it and/or modify
@@ -121,29 +108,18 @@ You should have received a copy of the GNU General Public License
 along with this software; see the file COPYING.  If not, write to
 the Free Software Foundation, Inc., 51 Franklin Street,
 Boston, MA 02110-1301, USA.
-""" % datetime.now().year
-
-Templates['work_h'] = """
-	int work (int noutput_items,
-		gr_vector_const_void_star &input_items,
-		gr_vector_void_star &output_items);"""
-
-Templates['generalwork_h'] = """
-  int general_work (int noutput_items,
-		    gr_vector_int &ninput_items,
-		    gr_vector_const_void_star &input_items,
-		    gr_vector_void_star &output_items);"""
+''' % datetime.now().year
 
 # Header file of a sync/decimator/interpolator block
-Templates['block_impl_h'] = Template("""/* -*- c++ -*- */
-$license
-#ifndef INCLUDED_${modnameupper}_${blocknameupper}_IMPL_H
-#define INCLUDED_${modnameupper}_${blocknameupper}_IMPL_H
+Templates['block_impl_h'] = '''/* -*- c++ -*- */
+${str_to_fancyc_comment($license)}
+\#ifndef INCLUDED_${modname.upper()}_${blockname.upper()}_IMPL_H
+\#define INCLUDED_${modname.upper()}_${blockname.upper()}_IMPL_H
 
-#include <${modname}/${blockname}.h>
+\#include <${modname}/${blockname}.h>
 
 namespace gr {
-  namespace $modname {
+  namespace ${modname} {
 
     class ${blockname}_impl : public ${blockname}
     {
@@ -151,82 +127,74 @@ namespace gr {
       // Nothing to declare in this block.
 
     public:
-      ${blockname}_impl($argliststripped);
+      ${blockname}_impl(${strip_default_values($arglist)});
       ~${blockname}_impl();
 
+#if $grblocktype == 'gr_block'
       // Where all the action really happens
-
-$workfunc
+      int general_work(int noutput_items,
+		       gr_vector_int &ninput_items,
+		       gr_vector_const_void_star &input_items,
+		       gr_vector_void_star &output_items);
+#else if $grblocktype == 'gr_hier_block2'
+#silent pass
+#else
+      // Where all the action really happens
+      int work(int noutput_items,
+	       gr_vector_const_void_star &input_items,
+	       gr_vector_void_star &output_items);
+#end if
     };
 
-  } // namespace $modname
+  } // namespace ${modname}
 } // namespace gr
 
-#endif /* INCLUDED_${modnameupper}_${blocknameupper}_IMPL_H */
+\#endif /* INCLUDED_${modname.upper()}_${blockname.upper()}_IMPL_H */
 
-""")
-
-
-# Work functions for C++ GR blocks
-Templates['work_cpp'] = """work (int noutput_items,
-			gr_vector_const_void_star &input_items,
-			gr_vector_void_star &output_items)
-{
-	const float *in = (const float *) input_items[0];
-	float *out = (float *) output_items[0];
-
-	// Do <+signal processing+>
-
-	// Tell runtime system how many output items we produced.
-	return noutput_items;
-}
-"""
-
-Templates['generalwork_cpp'] = """general_work (int noutput_items,
-			       gr_vector_int &ninput_items,
-			       gr_vector_const_void_star &input_items,
-			       gr_vector_void_star &output_items)
-{
-  const float *in = (const float *) input_items[0];
-  float *out = (float *) output_items[0];
-
-  // Tell runtime system how many input items we consumed on
-  // each input stream.
-  consume_each (noutput_items);
-
-  // Tell runtime system how many output items we produced.
-  return noutput_items;
-}
-"""
+'''
 
 # C++ file of a GR block
-Templates['block_impl_cpp'] = Template("""/* -*- c++ -*- */
-$license
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+Templates['block_impl_cpp'] = '''/* -*- c++ -*- */
+${str_to_fancyc_comment($license)}
+\#ifdef HAVE_CONFIG_H
+\#include "config.h"
+\#endif
 
-#include <gr_io_signature.h>
-#include "${blockname}_impl.h"
+\#include <gr_io_signature.h>
+\#include "${blockname}_impl.h"
 
 namespace gr {
-  namespace $modname {
+  namespace ${modname} {
 
     ${blockname}::sptr
-    ${blockname}::make($argliststripped)
+    ${blockname}::make(${strip_default_values($arglist)})
     {
-      return gnuradio::get_initial_sptr (new ${blockname}_impl($arglistnotypes));
+      return gnuradio::get_initial_sptr (new ${blockname}_impl(${strip_arg_types($arglist)}));
     }
 
+#if $grblocktype == 'gr_sync_decimator'
+#set $decimation = ', <+decimation+>'
+#else if $grblocktype == 'gr_sync_interpolator'
+#set $decimation = ', <+interpolation+>'
+#else
+#set $decimation = ''
+#end if
     /*
      * The private constructor
      */
-    ${blockname}_impl::${blockname}_impl($argliststripped)
-      : $grblocktype("${blockname}",
+    ${blockname}_impl::${blockname}_impl(${strip_default_values($arglist)})
+      : ${grblocktype}("${blockname}",
 		      gr_make_io_signature($inputsig),
 		      gr_make_io_signature($outputsig)$decimation)
+#if $grblocktype == 'gr_hier_block2'
     {
-$constructorcontent}
+        connect(self(), 0, d_firstblock, 0);
+        // connect other blocks
+        connect(d_lastblock, 0, self(), 0);
+    }
+#else
+    {}
+#end if
 
     /*
      * Our virtual destructor.
@@ -235,43 +203,67 @@ $constructorcontent}
     {
     }
 
-    $workcall
-  } /* namespace $modname */
+#if $grblocktype == 'gr_block'
+    int
+    ${blockname}_impl::general_work (int noutput_items,
+                       gr_vector_int &ninput_items,
+                       gr_vector_const_void_star &input_items,
+                       gr_vector_void_star &output_items)
+    {
+        const float *in = (const float *) input_items[0];
+        float *out = (float *) output_items[0];
+
+        // Do <+signal processing+>
+        // Tell runtime system how many input items we consumed on
+        // each input stream.
+        consume_each (noutput_items);
+
+        // Tell runtime system how many output items we produced.
+        return noutput_items;
+    }
+
+#else if $grblocktype == 'gr_hier_block2'
+#silent pass
+#else
+    int
+    ${blockname}_impl::work(int noutput_items,
+			  gr_vector_const_void_star &input_items,
+			  gr_vector_void_star &output_items)
+    {
+        const float *in = (const float *) input_items[0];
+        float *out = (float *) output_items[0];
+
+        // Do <+signal processing+>
+
+        // Tell runtime system how many output items we produced.
+        return noutput_items;
+    }
+#end if
+
+  } /* namespace ${modname} */
 } /* namespace gr */
 
-""")
-
-Templates['block_cpp_workcall'] = Template("""
-
-    int
-    ${blockname}_impl::$workfunc
-""")
-
-Templates['block_cpp_hierconstructor'] = """
-	connect(self(), 0, d_firstblock, 0);
-	// connect other blocks
-	connect(d_lastblock, 0, self(), 0);
-"""
+'''
 
 # Block definition header file (for include/)
-Templates['block_def_h'] = Template("""/* -*- c++ -*- */
-$license
+Templates['block_def_h'] = '''/* -*- c++ -*- */
+${str_to_fancyc_comment($license)}
 
-#ifndef INCLUDED_${modnameupper}_${blocknameupper}_H
-#define INCLUDED_${modnameupper}_${blocknameupper}_H
+\#ifndef INCLUDED_${modname.upper()}_${blockname.upper()}_H
+\#define INCLUDED_${modname.upper()}_${blockname.upper()}_H
 
-#include <${modname}/api.h>
-#include <$grblocktype.h>
+\#include <${modname}/api.h>
+\#include <${grblocktype}.h>
 
 namespace gr {
-  namespace $modname {
+  namespace ${modname} {
 
     /*!
      * \\brief <+description of block+>
      * \ingroup block
      *
      */
-    class ${modnameupper}_API ${blockname} : virtual public $grblocktype
+    class ${modname.upper()}_API ${blockname} : virtual public $grblocktype
     {
     public:
        typedef boost::shared_ptr<${blockname}> sptr;
@@ -287,31 +279,24 @@ namespace gr {
        static sptr make($arglist);
     };
 
-  } // namespace $modname
+  } // namespace ${modname}
 } // namespace gr
 
-#endif /* INCLUDED_${modnameupper}_${blocknameupper}_H */
+\#endif /* INCLUDED_${modname.upper()}_${blockname.upper()}_H */
 
-""")
-
-# Header file for QA
-Templates['qa_cmakeentry'] = Template("""
-add_executable($basename $filename)
-target_link_libraries($basename gnuradio-$modname $${Boost_LIBRARIES})
-GR_ADD_TEST($basename $basename)
-""")
+'''
 
 # C++ file for QA
-Templates['qa_cpp'] = Template("""/* -*- c++ -*- */
-$license
+Templates['qa_cpp'] = '''/* -*- c++ -*- */
+${str_to_fancyc_comment($license)}
 
-#include "qa_square2_ff.h"
-#include <cppunit/TestAssert.h>
+\#include "qa_${blockname}.h"
+\#include <cppunit/TestAssert.h>
 
-#include <$modname/$blockname.h>
+\#include <$modname/${blockname}.h>
 
 namespace gr {
-  namespace $modname {
+  namespace ${modname} {
 
     void
     qa_${blockname}::t1()
@@ -319,23 +304,23 @@ namespace gr {
         // Put test here
     }
 
-  } /* namespace $modname */
+  } /* namespace ${modname} */
 } /* namespace gr */
 
-""")
+'''
 
 # Header file for QA
-Templates['qa_h'] = Template("""/* -*- c++ -*- */
-$license
+Templates['qa_h'] = '''/* -*- c++ -*- */
+${str_to_fancyc_comment($license)}
 
-#ifndef _QA_${blocknameupper}_H_
-#define _QA_${blocknameupper}_H_
+\#ifndef _QA_${blockname.upper()}_H_
+\#define _QA_${blockname.upper()}_H_
 
-#include <cppunit/extensions/HelperMacros.h>
-#include <cppunit/TestCase.h>
+\#include <cppunit/extensions/HelperMacros.h>
+\#include <cppunit/TestCase.h>
 
 namespace gr {
-  namespace $modname {
+  namespace ${modname} {
 
     class qa_${blockname} : public CppUnit::TestCase
     {
@@ -348,16 +333,16 @@ namespace gr {
       void t1();
     };
 
-  } /* namespace $modname */
+  } /* namespace ${modname} */
 } /* namespace gr */
 
-#endif /* _QA_${blocknameupper}_H_ */
+#endif /* _QA_${blockname.upper()}_H_ */
 
-""")
+'''
 
 # Python QA code
-Templates['qa_python'] = Template("""#!/usr/bin/env python
-$license
+Templates['qa_python'] = '''\#!/usr/bin/env python
+${str_to_python_comment($license)}
 #
 
 from gnuradio import gr, gr_unittest
@@ -379,93 +364,91 @@ class qa_$blockname (gr_unittest.TestCase):
 
 if __name__ == '__main__':
     gr_unittest.run(qa_${blockname}, "qa_${blockname}.xml")
-""")
+'''
 
 
 # Hierarchical block, Python version
-Templates['hier_python'] = Template('''$license
+Templates['hier_python'] = '''${str_to_python_comment($license)}
 
 from gnuradio import gr
 
-class $blockname(gr.hier_block2):
-    def __init__(self, $arglist):
+class ${blockname}(gr.hier_block2):
+    def __init__(self#if $arglist == '' then '' else ', '#$arglist):
     """
     docstring
 	"""
         gr.hier_block2.__init__(self, "$blockname",
-				gr.io_signature($inputsig),  # Input signature
-				gr.io_signature($outputsig)) # Output signature
+				gr.io_signature(${inputsig}),  # Input signature
+				gr.io_signature(${outputsig})) # Output signature
 
         # Define blocks and connect them
         self.connect()
 
-''')
+'''
 
 # Non-block file, C++ header
-Templates['noblock_h'] = Template('''/* -*- c++ -*- */
-$license
-#ifndef INCLUDED_${modnameupper}_${blocknameupper}_H
-#define INCLUDED_${modnameupper}_${blocknameupper}_H
+Templates['noblock_h'] = '''/* -*- c++ -*- */
+${str_to_fancyc_comment($license)}
+\#ifndef INCLUDED_${modname.upper()}_${blockname.upper()}_H
+\#define INCLUDED_${modname.upper()}_${blockname.upper()}_H
 
-#include <$modname/api.h>
+\#include <${modname}/api.h>
 
 namespace gr {
-  namespace $modname {
-    class ${modnameupper}_API $blockname
+  namespace ${modname} {
+    class ${modname.upper()}_API $blockname
     {
-        $blockname({$arglist});
-        ~$blockname();
+        ${blockname}(${arglist});
+        ~${blockname}();
         private:
     };
 
-
-
-  }  /* namespace $modname */
+  }  /* namespace ${modname} */
 }  /* namespace gr */
 
 
-#endif /* INCLUDED_${modnameupper}_${blocknameupper}_H */
+\#endif /* INCLUDED_${modname.upper()}_${blockname.upper()}_H */
 
-''')
+'''
 
 # Non-block file, C++ source
-Templates['noblock_cpp'] = Template('''/* -*- c++ -*- */
-$license
+Templates['noblock_cpp'] = '''/* -*- c++ -*- */
+${str_to_fancyc_comment($license)}
 
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
+\#ifdef HAVE_CONFIG_H
+\#include <config.h>
+\#endif
 
-#include <$modname/$blockname.h>
+\#include <${modname}/${blockname}.h>
 
 namespace gr {
   namespace ${modname} {
 
-    $blockname::$blockname($argliststripped)
+    $blockname::${blockname}(${strip_default_values($arglist)})
     {
     }
 
-    $blockname::~$blockname()
+    $blockname::~${blockname}()
     {
     }
 
   }  /* namespace $blockname */
 }  /* namespace gr */
 
-''')
+'''
 
 
-Templates['grc_xml'] = Template('''<?xml version="1.0"?>
+Templates['grc_xml'] = '''<?xml version="1.0"?>
 <block>
   <name>$blockname</name>
-  <key>$fullblockname</key>
+  <key>${modname}_$blockname</key>
   <category>$modname</category>
   <import>import $modname</import>
-  <make>$modname.$blockname($arglistnotypes)</make>
+  <make>${modname}.${blockname}(${strip_arg_types($arglist)})</make>
   <!-- Make one 'param' node for every Parameter you want settable from the GUI.
        Sub-nodes:
        * name
-       * key (makes the value accessible as $$keyname, e.g. in the make node)
+       * key (makes the value accessible as \$keyname, e.g. in the make node)
        * type -->
   <param>
     <name>...</name>
@@ -493,19 +476,18 @@ Templates['grc_xml'] = Template('''<?xml version="1.0"?>
     <type><!-- e.g. int, real, complex, byte, short, xxx_vector, ...--></type>
   </source>
 </block>
-''')
+'''
 
 # Usage
-Templates['usage'] = """
+Templates['usage'] = '''
 gr_modtool.py <command> [options] -- Run <command> with the given options.
 gr_modtool.py help -- Show a list of commands.
-gr_modtool.py help <command> -- Shows the help for a given command. """
+gr_modtool.py help <command> -- Shows the help for a given command. '''
 
 ### Code generator class #####################################################
-class CodeGenerator(object):
-    """ Creates the skeleton files. """
-    def __init__(self):
-        self.defvalpatt = re.compile(" *=[^,)]*")
+class GRMTemplate(Cheetah.Template.Template):
+    """ An extended template class """
+    def __init__(self, src, searchList=[]):
         self.grtypelist = {
                 'sync': 'gr_sync_block',
                 'decimator': 'gr_sync_decimator',
@@ -514,69 +496,31 @@ class CodeGenerator(object):
                 'hiercpp': 'gr_hier_block2',
                 'noblock': '',
                 'hierpython': ''}
-
-    def strip_default_values(self, string):
+        Cheetah.Template.Template.__init__(self, src, searchList=searchList)
+        self.grblocktype = self.grtypelist[searchList['blocktype']]
+    def strip_default_values(string):
         """ Strip default values from a C++ argument list. """
-        return self.defvalpatt.sub("", string)
-
-    def strip_arg_types(self, string):
+        return re.compile(" *=[^,)]*").sub("", string)
+    def strip_arg_types(string):
         """" Strip the argument types from a list of arguments
         Example: "int arg1, double arg2" -> "arg1, arg2" """
-        string = self.strip_default_values(string)
+        string = re.compile(" *=[^,)]*").sub("", string) # FIXME this should call strip_arg_types
         return ", ".join([part.strip().split(' ')[-1] for part in string.split(',')])
+    def str_to_fancyc_comment(text):
+        """ Return a string as a C formatted comment. """
+        l_lines = text.splitlines()
+        outstr = "/* " + l_lines[0] + "\n"
+        for line in l_lines[1:]:
+            outstr += " * " + line + "\n"
+        outstr += " */\n"
+        return outstr
+    def str_to_python_comment(text):
+        """ Return a string as a Python formatted comment. """
+        return re.compile('^', re.MULTILINE).sub('# ', text)
 
-    def get_template(self, tpl_id, **kwargs):
-        ''' Request a skeleton file from a template.
-        First, it prepares a dictionary which the template generator
-        can use to fill in the blanks, then it uses Python's
-        Template() function to create the file contents. '''
-        # Licence
-        if tpl_id in ('block_impl_h', 'block_impl_cpp', 'block_def_h', 'qa_h', 'qa_cpp', 'noblock_h', 'noblock_cpp'):
-            kwargs['license'] = str_to_fancyc_comment(kwargs['license'])
-        elif tpl_id in ('qa_python', 'hier_python'):
-            kwargs['license'] = str_to_python_comment(kwargs['license'])
-        # Standard values for templates
-        kwargs['argliststripped'] = self.strip_default_values(kwargs['arglist'])
-        kwargs['arglistnotypes'] = self.strip_arg_types(kwargs['arglist'])
-        kwargs['blocknameupper'] = kwargs['blockname'].upper()
-        kwargs['modnameupper'] = kwargs['modname'].upper()
-        kwargs['grblocktype'] = self.grtypelist[kwargs['blocktype']]
-        # Specials for qa_python
-        kwargs['swig'] = ''
-        if kwargs['blocktype'] != 'hierpython':
-            kwargs['swig'] = '_swig'
-        # Specials for block_h
-        if tpl_id == 'block_impl_h':
-            if kwargs['blocktype'] == 'general':
-                kwargs['workfunc'] = Templates['generalwork_h']
-            elif kwargs['blocktype'] == 'hiercpp':
-                kwargs['workfunc'] = ''
-            else:
-                kwargs['workfunc'] = Templates['work_h']
-        # Specials for block_cpp
-        if tpl_id == 'block_impl_cpp':
-            return self._get_block_cpp(kwargs)
-        # All other ones
-        return Templates[tpl_id].substitute(kwargs)
-
-    def _get_block_cpp(self, kwargs):
-        '''This template is a bit fussy, so it needs some extra attention.'''
-        kwargs['decimation'] = ''
-        kwargs['constructorcontent'] = ''
-        kwargs['workfunc'] = Templates['work_cpp']
-        kwargs['workcall'] = Templates['block_cpp_workcall'].substitute(kwargs)
-        if kwargs['blocktype'] == 'decimator':
-            kwargs['decimation'] = ", <+decimation+>"
-        elif kwargs['blocktype'] == 'interpolator':
-            kwargs['decimation'] = ", <+interpolation+>"
-        elif kwargs['blocktype'] == 'general':
-            kwargs['workfunc'] = Templates['generalwork_cpp']
-            kwargs['workcall'] = Templates['block_cpp_workcall'].substitute(kwargs)
-        elif kwargs['blocktype'] == 'hiercpp':
-            kwargs['workfunc'] = ''
-            kwargs['workcall'] = ''
-            kwargs['constructorcontent'] = Templates['block_cpp_hierconstructor']
-        return Templates['block_impl_cpp'].substitute(kwargs)
+def get_template(tpl_id, **kwargs):
+    """ Return the template given by tpl_id, parsed through Cheetah """
+    return str(GRMTemplate(Templates[tpl_id], searchList=kwargs))
 
 ### CMakeFile.txt editor class ###############################################
 class CMakeFileEditor(object):
@@ -640,20 +584,15 @@ class CMakeFileEditor(object):
     def disable_file(self, fname):
         """ Comment out a file """
         starts_line = False
-        ends_line = False
         for line in self.cfile.splitlines():
             if len(line.strip()) == 0 or line.strip()[0] == '#': continue
             if re.search(r'\b'+fname+r'\b', line):
                 if re.match(fname, line.lstrip()):
                     starts_line = True
-                if re.search(fname+'$', line.rstrip()):
-                    end_line = True
                 break
-        comment_out_re = r'#\1'
+        comment_out_re = r'#\1' + '\n' + self.indent
         if not starts_line:
             comment_out_re = r'\n' + self.indent + comment_out_re
-        if not ends_line:
-            comment_out_re = comment_out_re + '\n' + self.indent
         (self.cfile, nsubs) = re.subn(r'(\b'+fname+r'\b)\s*', comment_out_re, self.cfile)
         if nsubs == 0:
             print "Warning: A replacement failed when commenting out %s. Check the CMakeFile.txt manually." % fname
@@ -675,11 +614,11 @@ class ModTool(object):
         self._has_subdirs = {}
         self._skip_subdirs = {}
         self._info = {}
+        self._file = {}
         for subdir in self._subdirs:
             self._has_subdirs[subdir] = False
             self._skip_subdirs[subdir] = False
         self.parser = self.setup_parser()
-        self.tpl = CodeGenerator()
         self.args = None
         self.options = None
         self._dir = None
@@ -706,6 +645,17 @@ class ModTool(object):
                 help="Don't do anything in the grc/ subdirectory.")
         parser.add_option_group(ogroup)
         return parser
+
+    def _setup_files(self):
+        """ Initialise the self._file[] dictionary """
+        self._file['swig'] = os.path.join('swig', self._get_mainswigfile())
+        self._file['qalib'] = os.path.join('lib', 'qa_%s.cc' % self._info['modname'])
+        self._file['pyinit'] = os.path.join('python', '__init__.py')
+        self._file['cmlib'] = os.path.join('lib', 'CMakeLists.txt')
+        self._file['cmgrc'] = os.path.join('lib', 'CMakeLists.txt')
+        self._file['cmpython'] = os.path.join('python', 'CMakeLists.txt')
+        self._file['cminclude'] = os.path.join('lib', self._info['modname'], 'CMakeLists.txt')
+        self._file['cmswig'] = os.path.join('swig', 'CMakeLists.txt')
 
 
     def setup(self):
@@ -738,6 +688,7 @@ class ModTool(object):
         self._info['blockname'] = options.block_name
         self._info['includedir'] = os.path.join('include', self._info['modname'])
         self.options = options
+        self._setup_files()
 
 
     def run(self):
@@ -795,7 +746,6 @@ class ModToolAdd(ModTool):
         self._add_cc_qa = False
         self._add_py_qa = False
 
-
     def setup_parser(self):
         parser = ModTool.setup_parser(self)
         parser.usage = '%prog add [options]. \n Call %prog without any options to run it interactively.'
@@ -814,7 +764,6 @@ class ModToolAdd(ModTool):
                 help="If given, only source files are written, but CMakeLists.txt files are left unchanged.")
         parser.add_option_group(ogroup)
         return parser
-
 
     def setup(self):
         ModTool.setup(self)
@@ -886,7 +835,7 @@ class ModToolAdd(ModTool):
     def _write_tpl(self, tpl, path, fname):
         """ Shorthand for writing a substituted template to a file"""
         print "Adding file '%s'..." % fname
-        open(os.path.join(path, fname), 'w').write(self.tpl.get_template(tpl, **self._info))
+        open(os.path.join(path, fname), 'w').write(get_template(tpl, **self._info))
 
     def run(self):
         """ Go, go, go. """
@@ -969,26 +918,24 @@ class ModToolAdd(ModTool):
         - Edit main *.i file
         """
         print "Traversing swig..."
-        fname_mainswig = self._get_mainswigfile()
-        if fname_mainswig is None:
+        if self._get_mainswigfile() is None:
             print 'Warning: No main swig file found.'
             return
-        fname_mainswig = os.path.join('swig', fname_mainswig)
-        print "Editing %s..." % fname_mainswig
+        print "Editing %s..." % self._file['swig']
         swig_block_magic_str = '\n%%include "%s/%s.h"\nGR_SWIG_BLOCK_MAGIC2(%s, %s);\n' % (
                                    self._info['modname'],
                                    self._info['blockname'],
                                    self._info['modname'],
                                    self._info['blockname'])
         include_str = '#include "%s/%s.h"' % (self._info['modname'], self._info['blockname'])
-        if re.search('#include', open(fname_mainswig, 'r').read()):
-            append_re_line_sequence(fname_mainswig, '^#include.*\n', include_str)
+        if re.search('#include', open(self._file['swig'], 'r').read()):
+            append_re_line_sequence(self._file['swig'], '^#include.*\n', include_str)
         else: # I.e., if the swig file is empty
-            oldfile = open(fname_mainswig, 'r').read()
+            oldfile = open(self._file['swig'], 'r').read()
             regexp = re.compile('^%\{\n', re.MULTILINE)
             oldfile = regexp.sub('%%{\n%s\n' % include_str, oldfile, count=1)
-            open(fname_mainswig, 'w').write(oldfile)
-        open(fname_mainswig, 'a').write(swig_block_magic_str)
+            open(self._file['swig'], 'w').write(oldfile)
+        open(self._file['swig'], 'a').write(swig_block_magic_str)
 
 
     def _run_python_qa(self):
@@ -1080,11 +1027,9 @@ class ModToolRemove(ModTool):
                 return
             (base, ext) = os.path.splitext(filename)
             if ext == '.h':
-                remove_pattern_from_file(os.path.join('lib',
-                                                      'qa_%s.cc' % self._info['modname']),
+                remove_pattern_from_file(self._file['qalib'],
                                          '^#include "%s"\s*$' % filename)
-                remove_pattern_from_file(os.path.join('lib',
-                                                      'qa_%s.cc' % self._info['modname']),
+                remove_pattern_from_file(self._file['qalib'],
                                          '^\s*s->addTest\(gr::%s::%s::suite\(\)\);\s*$' % (self._info['modname'], base))
             elif ext == '.cc':
                 ed.remove_value('list',
@@ -1104,21 +1049,22 @@ class ModToolRemove(ModTool):
             self._run_subdir('lib', ('*.cc', '*.h'), ('add_library',),
                              cmakeedit_func=_remove_cc_test_case)
         if not self._skip_subdirs['include']:
-            incl_files_deleted = self._run_subdir(self._info['includedir'], ('*.h',), ('install',),
-                             cmakeedit_func=_remove_cc_test_case)
+            incl_files_deleted = self._run_subdir(self._info['includedir'], ('*.h',), ('install',))
         if not self._skip_subdirs['swig']:
-            print "Checking if lines have to be removed from %s..." % self._get_mainswigfile()
-            for f in incl_files_deleted:
-                remove_pattern_from_file('swig/'+self._get_mainswigfile(),
+            swig_files_deleted = self._run_subdir('swig', ('*.i',), ('install',))
+            print "Checking if lines have to be removed from %s..." % self._file['swig']
+            for f in incl_files_deleted + swig_files_deleted:
+                remove_pattern_from_file(self._file['swig'],
                                          'GR_SWIG_BLOCK_MAGIC2\(%s,\s*%s\);' % (self._info['modname'],
                                                                                 os.path.splitext(f)[0]))
-                remove_pattern_from_file('swig/'+self._get_mainswigfile(), '(#|%%)include "%s/%s".*\n' % (self._info['modname'], f))
+                remove_pattern_from_file(self._file['swig'],
+                                         '(#|%%)include "(%s/)?%s".*\n' % (self._info['modname'], f))
         if not self._skip_subdirs['python']:
             py_files_deleted = self._run_subdir('python', ('*.py',), ('GR_PYTHON_INSTALL',),
                                                 cmakeedit_func=_remove_py_test_case)
             for f in py_files_deleted:
-                remove_pattern_from_file('python/__init__.py', '.*import\s+%s.*' % f[:-3])
-                remove_pattern_from_file('python/__init__.py', '.*from\s+%s\s+import.*\n' % f[:-3])
+                remove_pattern_from_file(self._file['pyinit'], '.*import\s+%s.*' % f[:-3])
+                remove_pattern_from_file(self._file['pyinit'], '.*from\s+%s\s+import.*\n' % f[:-3])
         if not self._skip_subdirs['grc']:
             self._run_subdir('grc', ('*.xml',), ('install',))
 
@@ -1140,14 +1086,12 @@ class ModToolRemove(ModTool):
         for f in files:
             if re.search(self._info['pattern'], os.path.basename(f)) is not None:
                 files_filt.append(f)
-            if path is "swig":
-                files_filt.append(f)
         if len(files_filt) == 0:
             print "None found."
             return []
         # 2. Delete files, Makefile entries and other occurences
         files_deleted = []
-        ed = CMakeFileEditor('%s/CMakeLists.txt' % path)
+        ed = CMakeFileEditor(os.path.join(path, 'CMakeLists.txt'))
         yes = self._info['yes']
         for f in files_filt:
             b = os.path.basename(f)
@@ -1155,6 +1099,7 @@ class ModToolRemove(ModTool):
                 ans = raw_input("Really delete %s? [Y/n/a/q]: " % f).lower().strip()
                 if ans == 'a':
                     yes = True
+                    self._info['yes'] = True
                 if ans == 'q':
                     sys.exit(0)
                 if ans == 'n':
@@ -1215,20 +1160,20 @@ class ModToolDisable(ModTool):
         def _handle_py_mod(cmake, fname):
             """ Do stuff for py extra files """
             try:
-                initfile = open(os.path.join('python', '__init__.py')).read()
+                initfile = open(self._file['pyinit']).read()
             except IOError:
                 print "Could not edit __init__.py, that might be a problem."
                 return False
             pymodname = os.path.splitext(fname)[0]
             initfile = re.sub(r'((from|import)\s+\b'+pymodname+r'\b)', r'#\1', initfile)
-            open(os.path.join('python', '__init__.py'), 'w').write(initfile)
+            open(self._file['pyinit'], 'w').write(initfile)
             return False
         def _handle_cc_qa(cmake, fname):
             """ Comment out the qa*.cc file in CMakeLists.txt, also
             Comment out the qa*.h in qa_$modname.cc (including the addtest line) """
             cmake.comment_out_lines('\$\{CMAKE_CURRENT_SOURCE_DIR\}/'+fname)
             fname_base = os.path.splitext(fname)[0]
-            ed = CMakeFileEditor(os.path.join('lib', 'qa_%s.cc' % self._info['modname']))
+            ed = CMakeFileEditor(self._file['qalib']) # Abusing the CMakeFileEditor...
             ed.comment_out_lines('#include\s+"%s.h"' % fname_base, comment_str='//')
             ed.comment_out_lines('%s::suite\(\)' % fname_base, comment_str='//')
             ed.write()
@@ -1236,26 +1181,27 @@ class ModToolDisable(ModTool):
         def _handle_h_swig(cmake, fname):
             """ Comment out include files from the SWIG file,
             as well as the block magic """
-            swigfile = open(os.path.join('swig', self._get_mainswigfile())).read()
-            (swigfile, nsubs) = re.subn('(.include\s+"'+fname+'")', r'//\1', swigfile)
+            swigfile = open(self._file['swig']).read()
+            (swigfile, nsubs) = re.subn('(.include\s+"%s/%s")' % (self._info['modname'], fname),
+                                        r'//\1', swigfile)
             if nsubs > 0:
-                print "Changing %s..." % self._get_mainswigfile()
+                print "Changing %s..." % self._file['swig']
             if nsubs > 1: # Need to find a single BLOCK_MAGIC
                 blockname = os.path.splitext(fname)[0]
                 (swigfile, nsubs) = re.subn('(GR_SWIG_BLOCK_MAGIC2.+'+blockname+'.+;)', r'//\1', swigfile)
                 if nsubs > 1:
-                    print "Hm, something didn't go right while editing %s." % swigfile
-            open(os.path.join('swig', self._get_mainswigfile()), 'w').write(swigfile)
+                    print "Hm, something didn't go right while editing %s." % self._file['swig']
+            open(self._file['swig'], 'w').write(swigfile)
             return False
         def _handle_i_swig(cmake, fname):
             """ Comment out include files from the SWIG file,
             as well as the block magic """
-            swigfile = open(os.path.join('swig', self._get_mainswigfile())).read()
-            blockname = os.path.splitext(fname[len(self._info['modname'])+1:])[0] # DEPRECATE 3.7
+            swigfile = open(self._file['swig']).read()
+            blockname = os.path.splitext(fname)[0]
             swigfile = re.sub('(%include\s+"'+fname+'")', r'//\1', swigfile)
-            print "Changing %s..." % self._get_mainswigfile()
+            print "Changing %s..." % self._file['swig']
             swigfile = re.sub('(GR_SWIG_BLOCK_MAGIC2.+'+blockname+'.+;)', r'//\1', swigfile)
-            open(os.path.join('swig', self._get_mainswigfile()), 'w').write(swigfile)
+            open(self._file['swig'], 'w').write(swigfile)
             return False
         # List of special rules: 0: subdir, 1: filename re match, 2: function
         special_treatments = (
@@ -1288,7 +1234,7 @@ class ModToolDisable(ModTool):
                 if not file_disabled:
                     cmake.disable_file(fname)
             cmake.write()
-        print "Careful: gr_modtool disable does not resolve dependencies."
+        print "Careful: 'gr_modtool disable' does not resolve dependencies."
 
 ### The entire new module zipfile as base64 encoded tar.bz2  ###
 NEWMOD_TARFILE = """QlpoOTFBWSZTWRjZ7BYBX8V////9UoP///////////////8QAQgAEUoEgAgBBAABgig4YWt3kXp9
