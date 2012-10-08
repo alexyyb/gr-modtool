@@ -54,11 +54,9 @@ class ModToolRemove(ModTool):
                 return
             (base, ext) = os.path.splitext(filename)
             if ext == '.h':
-                remove_pattern_from_file(os.path.join('lib',
-                                                      'qa_%s.cc' % self._info['modname']),
+                remove_pattern_from_file(self._file['qalib'],
                                          '^#include "%s"\s*$' % filename)
-                remove_pattern_from_file(os.path.join('lib',
-                                                      'qa_%s.cc' % self._info['modname']),
+                remove_pattern_from_file(self._file['qalib'],
                                          '^\s*s->addTest\(gr::%s::%s::suite\(\)\);\s*$' % (self._info['modname'], base))
             elif ext == '.cc':
                 ed.remove_value('list',
@@ -78,21 +76,22 @@ class ModToolRemove(ModTool):
             self._run_subdir('lib', ('*.cc', '*.h'), ('add_library',),
                              cmakeedit_func=_remove_cc_test_case)
         if not self._skip_subdirs['include']:
-            incl_files_deleted = self._run_subdir(self._info['includedir'], ('*.h',), ('install',),
-                             cmakeedit_func=_remove_cc_test_case)
+            incl_files_deleted = self._run_subdir(self._info['includedir'], ('*.h',), ('install',))
         if not self._skip_subdirs['swig']:
-            print "Checking if lines have to be removed from %s..." % self._get_mainswigfile()
-            for f in incl_files_deleted:
-                remove_pattern_from_file('swig/'+self._get_mainswigfile(),
+            swig_files_deleted = self._run_subdir('swig', ('*.i',), ('install',))
+            print "Checking if lines have to be removed from %s..." % self._file['swig']
+            for f in incl_files_deleted + swig_files_deleted:
+                remove_pattern_from_file(self._file['swig'],
                                          'GR_SWIG_BLOCK_MAGIC2\(%s,\s*%s\);' % (self._info['modname'],
                                                                                 os.path.splitext(f)[0]))
-                remove_pattern_from_file('swig/'+self._get_mainswigfile(), '(#|%%)include "%s/%s".*\n' % (self._info['modname'], f))
+                remove_pattern_from_file(self._file['swig'],
+                                         '(#|%%)include "(%s/)?%s".*\n' % (self._info['modname'], f))
         if not self._skip_subdirs['python']:
             py_files_deleted = self._run_subdir('python', ('*.py',), ('GR_PYTHON_INSTALL',),
                                                 cmakeedit_func=_remove_py_test_case)
             for f in py_files_deleted:
-                remove_pattern_from_file('python/__init__.py', '.*import\s+%s.*' % f[:-3])
-                remove_pattern_from_file('python/__init__.py', '.*from\s+%s\s+import.*\n' % f[:-3])
+                remove_pattern_from_file(self._file['pyinit'], '.*import\s+%s.*' % f[:-3])
+                remove_pattern_from_file(self._file['pyinit'], '.*from\s+%s\s+import.*\n' % f[:-3])
         if not self._skip_subdirs['grc']:
             self._run_subdir('grc', ('*.xml',), ('install',))
 
@@ -114,14 +113,12 @@ class ModToolRemove(ModTool):
         for f in files:
             if re.search(self._info['pattern'], os.path.basename(f)) is not None:
                 files_filt.append(f)
-            if path is "swig":
-                files_filt.append(f)
         if len(files_filt) == 0:
             print "None found."
             return []
         # 2. Delete files, Makefile entries and other occurences
         files_deleted = []
-        ed = CMakeFileEditor('%s/CMakeLists.txt' % path)
+        ed = CMakeFileEditor(os.path.join(path, 'CMakeLists.txt'))
         yes = self._info['yes']
         for f in files_filt:
             b = os.path.basename(f)
@@ -129,6 +126,7 @@ class ModToolRemove(ModTool):
                 ans = raw_input("Really delete %s? [Y/n/a/q]: " % f).lower().strip()
                 if ans == 'a':
                     yes = True
+                    self._info['yes'] = True
                 if ans == 'q':
                     sys.exit(0)
                 if ans == 'n':

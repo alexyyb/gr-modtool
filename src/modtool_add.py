@@ -4,12 +4,12 @@ import os
 import sys
 import re
 from optparse import OptionGroup
-from string import Template
 
 from util_functions import append_re_line_sequence
 from cmakefile_editor import CMakeFileEditor
 from modtool_base import ModTool
 from templates import Templates
+from code_generator import CodeGenerator
 
 ### Add new block module #####################################################
 class ModToolAdd(ModTool):
@@ -24,6 +24,7 @@ class ModToolAdd(ModTool):
         self._info['outputsig'] = "<+MIN_OUT+>, <+MAX_OUT+>, sizeof (<+float+>)"
         self._add_cc_qa = False
         self._add_py_qa = False
+        self.tpl = CodeGenerator()
 
 
     def setup_parser(self):
@@ -199,26 +200,24 @@ class ModToolAdd(ModTool):
         - Edit main *.i file
         """
         print "Traversing swig..."
-        fname_mainswig = self._get_mainswigfile()
-        if fname_mainswig is None:
+        if self._get_mainswigfile() is None:
             print 'Warning: No main swig file found.'
             return
-        fname_mainswig = os.path.join('swig', fname_mainswig)
-        print "Editing %s..." % fname_mainswig
+        print "Editing %s..." % self._file['swig']
         swig_block_magic_str = '\n%%include "%s/%s.h"\nGR_SWIG_BLOCK_MAGIC2(%s, %s);\n' % (
                                    self._info['modname'],
                                    self._info['blockname'],
                                    self._info['modname'],
                                    self._info['blockname'])
         include_str = '#include "%s/%s.h"' % (self._info['modname'], self._info['blockname'])
-        if re.search('#include', open(fname_mainswig, 'r').read()):
-            append_re_line_sequence(fname_mainswig, '^#include.*\n', include_str)
+        if re.search('#include', open(self._file['swig'], 'r').read()):
+            append_re_line_sequence(self._file['swig'], '^#include.*\n', include_str)
         else: # I.e., if the swig file is empty
-            oldfile = open(fname_mainswig, 'r').read()
+            oldfile = open(self._file['swig'], 'r').read()
             regexp = re.compile('^%\{\n', re.MULTILINE)
             oldfile = regexp.sub('%%{\n%s\n' % include_str, oldfile, count=1)
-            open(fname_mainswig, 'w').write(oldfile)
-        open(fname_mainswig, 'a').write(swig_block_magic_str)
+            open(self._file['swig'], 'w').write(oldfile)
+        open(self._file['swig'], 'a').write(swig_block_magic_str)
 
 
     def _run_python_qa(self):

@@ -7,7 +7,6 @@ from optparse import OptionParser, OptionGroup
 
 from util_functions import get_modname
 from templates import Templates
-from code_generator import CodeGenerator
 
 ### ModTool base class #######################################################
 class ModTool(object):
@@ -17,11 +16,11 @@ class ModTool(object):
         self._has_subdirs = {}
         self._skip_subdirs = {}
         self._info = {}
+        self._file = {}
         for subdir in self._subdirs:
             self._has_subdirs[subdir] = False
             self._skip_subdirs[subdir] = False
         self.parser = self.setup_parser()
-        self.tpl = CodeGenerator()
         self.args = None
         self.options = None
         self._dir = None
@@ -48,6 +47,17 @@ class ModTool(object):
                 help="Don't do anything in the grc/ subdirectory.")
         parser.add_option_group(ogroup)
         return parser
+
+    def _setup_files(self):
+        """ Initialise the self._file[] dictionary """
+        self._file['swig'] = os.path.join('swig', self._get_mainswigfile())
+        self._file['qalib'] = os.path.join('lib', 'qa_%s.cc' % self._info['modname'])
+        self._file['pyinit'] = os.path.join('python', '__init__.py')
+        self._file['cmlib'] = os.path.join('lib', 'CMakeLists.txt')
+        self._file['cmgrc'] = os.path.join('lib', 'CMakeLists.txt')
+        self._file['cmpython'] = os.path.join('python', 'CMakeLists.txt')
+        self._file['cminclude'] = os.path.join('lib', self._info['modname'], 'CMakeLists.txt')
+        self._file['cmswig'] = os.path.join('swig', 'CMakeLists.txt')
 
 
     def setup(self):
@@ -80,6 +90,7 @@ class ModTool(object):
         self._info['blockname'] = options.block_name
         self._info['includedir'] = os.path.join('include', self._info['modname'])
         self.options = options
+        self._setup_files()
 
 
     def run(self):
