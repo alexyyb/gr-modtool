@@ -55,17 +55,21 @@ class ModToolDisable(ModTool):
             try:
                 initfile = open(os.path.join('python', '__init__.py')).read()
             except IOError:
+                print "Could not edit __init__.py, that might be a problem."
                 return False
             pymodname = os.path.splitext(fname)[0]
             initfile = re.sub(r'((from|import)\s+\b'+pymodname+r'\b)', r'#\1', initfile)
             open(os.path.join('python', '__init__.py'), 'w').write(initfile)
             return False
         def _handle_cc_qa(cmake, fname):
-            """ Do stuff for cc qa """
-            print 'hello...'
-            cmake.comment_out_lines('add_executable.*'+fname)
-            cmake.comment_out_lines('target_link_libraries.*'+os.path.splitext(fname)[0])
-            cmake.comment_out_lines('GR_ADD_TEST.*'+os.path.splitext(fname)[0])
+            """ Comment out the qa*.cc file in CMakeLists.txt, also
+            Comment out the qa*.h in qa_$modname.cc (including the addtest line) """
+            cmake.comment_out_lines('\$\{CMAKE_CURRENT_SOURCE_DIR\}/'+fname)
+            fname_base = os.path.splitext(fname)[0]
+            ed = CMakeFileEditor(os.path.join('lib', 'qa_%s.cc' % self._info['modname']))
+            ed.comment_out_lines('#include\s+"%s.h"' % fname_base, comment_str='//')
+            ed.comment_out_lines('%s::suite\(\)' % fname_base, comment_str='//')
+            ed.write()
             return True
         def _handle_h_swig(cmake, fname):
             """ Comment out include files from the SWIG file,
@@ -75,8 +79,8 @@ class ModToolDisable(ModTool):
             if nsubs > 0:
                 print "Changing %s..." % self._get_mainswigfile()
             if nsubs > 1: # Need to find a single BLOCK_MAGIC
-                blockname = os.path.splitext(fname[len(self._info['modname'])+1:])[0] # DEPRECATE 3.7
-                (swigfile, nsubs) = re.subn('(GR_SWIG_BLOCK_MAGIC.+'+blockname+'.+;)', r'//\1', swigfile)
+                blockname = os.path.splitext(fname)[0]
+                (swigfile, nsubs) = re.subn('(GR_SWIG_BLOCK_MAGIC2.+'+blockname+'.+;)', r'//\1', swigfile)
                 if nsubs > 1:
                     print "Hm, something didn't go right while editing %s." % swigfile
             open(os.path.join('swig', self._get_mainswigfile()), 'w').write(swigfile)
@@ -88,7 +92,7 @@ class ModToolDisable(ModTool):
             blockname = os.path.splitext(fname[len(self._info['modname'])+1:])[0] # DEPRECATE 3.7
             swigfile = re.sub('(%include\s+"'+fname+'")', r'//\1', swigfile)
             print "Changing %s..." % self._get_mainswigfile()
-            swigfile = re.sub('(GR_SWIG_BLOCK_MAGIC.+'+blockname+'.+;)', r'//\1', swigfile)
+            swigfile = re.sub('(GR_SWIG_BLOCK_MAGIC2.+'+blockname+'.+;)', r'//\1', swigfile)
             open(os.path.join('swig', self._get_mainswigfile()), 'w').write(swigfile)
             return False
         # List of special rules: 0: subdir, 1: filename re match, 2: function
@@ -96,11 +100,12 @@ class ModToolDisable(ModTool):
                 ('python', 'qa.+py$', _handle_py_qa),
                 ('python', '^(?!qa).+py$', _handle_py_mod),
                 ('lib', 'qa.+\.cc$', _handle_cc_qa),
-                ('include', '.+\.h$', _handle_h_swig),
+                ('include/%s' % self._info['modname'], '.+\.h$', _handle_h_swig),
                 ('swig', '.+\.i$', _handle_i_swig)
         )
         for subdir in self._subdirs:
             if self._skip_subdirs[subdir]: continue
+            if subdir == 'include': subdir = 'include/%s' % self._info['modname']
             print "Traversing %s..." % subdir
             cmake = CMakeFileEditor(os.path.join(subdir, 'CMakeLists.txt'))
             filenames = cmake.find_filenames_match(self._info['pattern'])

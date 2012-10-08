@@ -85,9 +85,9 @@ class CMakeFileEditor(object):
             print "Warning: Replaced %s %d times (instead of once). Check the CMakeFile.txt manually." % (fname, nsubs)
 
 
-    def comment_out_lines(self, pattern):
+    def comment_out_lines(self, pattern, comment_str='#'):
         """ Comments out all lines that match with pattern """
         for line in self.cfile.splitlines():
             if re.search(pattern, line):
-                self.cfile = self.cfile.replace(line, '#'+line)
+                self.cfile = self.cfile.replace(line, comment_str+line)
 
