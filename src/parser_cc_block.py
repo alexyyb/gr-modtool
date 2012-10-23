@@ -75,12 +75,12 @@ class ParserCCBlock(object):
 
     def read_params(self):
         """ Read the parameters required to initialize the block """
-        make_regex = '(?<=_API)\s+\w+_sptr\s+\w+_make_\w+\s*\(([^)]*)\)'
+        make_regex = 'static\s+sptr\s+make\s*\((?P<plist>(\([^\)]\)|[^)])*)\)'
         make_match = re.compile(make_regex, re.MULTILINE).search(self.code_h)
         # Go through params
         params = []
         try:
-            param_str = make_match.group(1).strip()
+            param_str = make_match.group('plist').strip()
             if len(param_str) == 0:
                 return params
             for param in param_str.split(','):

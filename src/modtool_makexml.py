@@ -51,7 +51,7 @@ class ModToolMakeXML(ModTool):
         """ Go, go, go! """
         # 1) Go through lib/
         if not self._skip_subdirs['lib']:
-            files = self._search_files('lib', '*.cc')
+            files = self._search_files('lib', '*_impl.cc')
             for f in files:
                 if os.path.basename(f)[0:2] == 'qa':
                     continue
@@ -90,9 +90,8 @@ class ModToolMakeXML(ModTool):
             return p_type
         def _get_blockdata(fname_cc):
             """ Return the block name and the header file name from the .cc file name """
-            blockname = os.path.splitext(os.path.basename(fname_cc))[0]
+            blockname = os.path.splitext(os.path.basename(fname_cc))[0].replace('_impl', '')
             fname_h = blockname + '.h'
-            blockname = blockname.replace(self._info['modname']+'_', '', 1) # Deprecate 3.7
             fname_xml = '%s_%s.xml' % (self._info['modname'], blockname)
             return (blockname, fname_h, fname_xml)
         # Go, go, go
@@ -100,7 +99,7 @@ class ModToolMakeXML(ModTool):
         (blockname, fname_h, fname_xml) = _get_blockdata(fname_cc)
         try:
             parser = ParserCCBlock(fname_cc,
-                                   os.path.join('include', fname_h),
+                                   os.path.join('include', self._info['modname'], fname_h),
                                    blockname, _type_translate
                                   )
         except IOError:
