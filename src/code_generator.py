@@ -1,6 +1,7 @@
 """ A code generator (needed by ModToolAdd) """
 
 import re
+from util_functions import str_to_fancyc_comment, str_to_python_comment
 from templates import Templates
 import Cheetah.Template
 
@@ -41,4 +42,3 @@ class GRMTemplate(Cheetah.Template.Template):
 def get_template(tpl_id, **kwargs):
     """ Return the template given by tpl_id, parsed through Cheetah """
     return str(GRMTemplate(Templates[tpl_id], searchList=kwargs))
-
