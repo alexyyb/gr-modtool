@@ -54,9 +54,9 @@ class ModTool(object):
         self._file['qalib'] = os.path.join('lib', 'qa_%s.cc' % self._info['modname'])
         self._file['pyinit'] = os.path.join('python', '__init__.py')
         self._file['cmlib'] = os.path.join('lib', 'CMakeLists.txt')
-        self._file['cmgrc'] = os.path.join('lib', 'CMakeLists.txt')
+        self._file['cmgrc'] = os.path.join('grc', 'CMakeLists.txt')
         self._file['cmpython'] = os.path.join('python', 'CMakeLists.txt')
-        self._file['cminclude'] = os.path.join('lib', self._info['modname'], 'CMakeLists.txt')
+        self._file['cminclude'] = os.path.join('include', self._info['modname'], 'CMakeLists.txt')
         self._file['cmswig'] = os.path.join('swig', 'CMakeLists.txt')
 
 
