@@ -521,7 +521,7 @@ gr_modtool.py help <command> -- Shows the help for a given command. '''
 ### Code generator class #####################################################
 class GRMTemplate(Cheetah.Template.Template):
     """ An extended template class """
-    def __init__(self, src, searchList=[]):
+    def __init__(self, src, searchList):
         self.grtypelist = {
                 'sync': 'gr_sync_block',
                 'decimator': 'gr_sync_decimator',
@@ -530,27 +530,12 @@ class GRMTemplate(Cheetah.Template.Template):
                 'hiercpp': 'gr_hier_block2',
                 'noblock': '',
                 'hierpython': ''}
+        searchList['str_to_fancyc_comment'] = str_to_fancyc_comment
+        searchList['str_to_python_comment'] = str_to_python_comment
+        searchList['strip_default_values'] = strip_default_values
+        searchList['strip_arg_types'] = strip_arg_types
         Cheetah.Template.Template.__init__(self, src, searchList=searchList)
         self.grblocktype = self.grtypelist[searchList['blocktype']]
-    def strip_default_values(string):
-        """ Strip default values from a C++ argument list. """
-        return re.compile(" *=[^,)]*").sub("", string)
-    def strip_arg_types(string):
-        """" Strip the argument types from a list of arguments
-        Example: "int arg1, double arg2" -> "arg1, arg2" """
-        string = re.compile(" *=[^,)]*").sub("", string) # FIXME this should call strip_arg_types
-        return ", ".join([part.strip().split(' ')[-1] for part in string.split(',')])
-    def str_to_fancyc_comment(text):
-        """ Return a string as a C formatted comment. """
-        l_lines = text.splitlines()
-        outstr = "/* " + l_lines[0] + "\n"
-        for line in l_lines[1:]:
-            outstr += " * " + line + "\n"
-        outstr += " */\n"
-        return outstr
-    def str_to_python_comment(text):
-        """ Return a string as a Python formatted comment. """
-        return re.compile('^', re.MULTILINE).sub('# ', text)
 
 def get_template(tpl_id, **kwargs):
     """ Return the template given by tpl_id, parsed through Cheetah """
@@ -681,7 +666,8 @@ class ModTool(object):
 
     def _setup_files(self):
         """ Initialise the self._file[] dictionary """
-        self._file['swig'] = os.path.join('swig', self._get_mainswigfile())
+        if not self._skip_subdirs['swig']:
+            self._file['swig'] = os.path.join('swig', self._get_mainswigfile())
         self._file['qalib'] = os.path.join('lib', 'qa_%s.cc' % self._info['modname'])
         self._file['pyinit'] = os.path.join('python', '__init__.py')
         self._file['cmlib'] = os.path.join('lib', 'CMakeLists.txt')
@@ -700,24 +686,21 @@ class ModTool(object):
             sys.exit(1)
         print "Operating in directory " + self._dir
 
-        if options.skip_lib:
-            print "Force-skipping 'lib'."
-            self._skip_subdirs['lib'] = True
-        if options.skip_python:
-            print "Force-skipping 'python'."
-            self._skip_subdirs['python'] = True
-        if options.skip_swig:
-            print "Force-skipping 'swig'."
-            self._skip_subdirs['swig'] = True
-        if options.skip_grc:
-            print "Force-skipping 'grc'."
-            self._skip_subdirs['grc'] = True
-
         if options.module_name is not None:
             self._info['modname'] = options.module_name
         else:
             self._info['modname'] = get_modname()
         print "GNU Radio module name identified: " + self._info['modname']
+
+        if options.skip_lib:
+            self._skip_subdirs['lib'] = True
+        if options.skip_python:
+            self._skip_subdirs['python'] = True
+        if options.skip_swig or self._get_mainswigfile() is None:
+            self._skip_subdirs['swig'] = True
+        if options.skip_grc:
+            self._skip_subdirs['grc'] = True
+
         self._info['blockname'] = options.block_name
         self._info['includedir'] = os.path.join('include', self._info['modname'])
         self.options = options
@@ -789,60 +772,83 @@ class ModToolInfo(ModTool):
 
     def run(self):
         """ Go, go, go! """
-        out_info = {}
-        base_dir = os.path.abspath(self.options.directory)
+        mod_info = {}
+        base_dir = self._get_base_dir(self.options.directory)
+        if base_dir is None:
+            if self.options.python_readable:
+                print '{}'
+            else:
+                print "No module found."
+            sys.exit(0)
+        mod_info['base_dir'] = base_dir
+        os.chdir(mod_info['base_dir'])
+        mod_info['modname'] = get_modname()
+        mod_info['incdirs'] = []
+        mod_incl_dir = os.path.join(mod_info['base_dir'], 'include')
+        if os.path.isdir(os.path.join(mod_incl_dir, mod_info['modname'])):
+            mod_info['incdirs'].append(os.path.join(mod_incl_dir, mod_info['modname']))
+        else:
+            mod_info['incdirs'].append(mod_incl_dir)
+        build_dir = self._get_build_dir(mod_info)
+        if build_dir is not None:
+            mod_info['build_dir'] = build_dir
+            mod_info['incdirs'] += self._get_include_dirs(mod_info)
+        if self.options.python_readable:
+            print str(mod_info)
+        else:
+            self._pretty_print(mod_info)
+
+    def _get_base_dir(self, start_dir):
+        """ Figure out the base dir (where the top-level cmake file is) """
+        base_dir = os.path.abspath(start_dir)
         if self._check_directory(base_dir):
-            out_info['base_dir'] = base_dir
+            return base_dir
         else:
             (up_dir, this_dir) = os.path.split(base_dir)
-            if os.path.splitext(up_dir)[1] == 'include':
-                up_dir = os.path.splitext(up_dir)[0]
+            if os.path.split(up_dir)[1] == 'include':
+                up_dir = os.path.split(up_dir)[0]
             if self._check_directory(up_dir):
-                out_info['base_dir'] = up_dir
-            else:
-                if self.options.python_readable:
-                    print '{}'
-                else:
-                    print "No module found."
-                sys.exit(0)
-        os.chdir(out_info['base_dir'])
-        out_info['modname'] = get_modname()
-        out_info['incdirs'] = []
-        mod_incl_dir = os.path.join(out_info['base_dir'], 'include')
-        if os.path.isdir(os.path.join(mod_incl_dir, out_info['modname'])):
-            out_info['incdirs'].append(os.path.join(mod_incl_dir, out_info['modname']))
+                return up_dir
+        return None
+
+    def _get_build_dir(self, mod_info):
+        """ Figure out the build dir (i.e. where you run 'cmake'). This checks
+        for a file called CMakeCache.txt, which is created when running cmake.
+        If that hasn't happened, the build dir cannot be detected, unless it's
+        called 'build', which is then assumed to be the build dir. """
+        has_build_dir = os.path.isdir(os.path.join(mod_info['base_dir'], 'build'))
+        if (has_build_dir and os.path.isfile(os.path.join(mod_info['base_dir'], 'CMakeCache.txt'))):
+            return os.path.join(mod_info['base_dir'], 'build')
         else:
-            out_info['incdirs'].append(mod_incl_dir)
-        if (os.path.isdir(os.path.join(out_info['base_dir'], 'build'))
-                and os.path.isfile(os.path.join(out_info['base_dir'], 'CMakeCache.txt'))):
-            out_info['build_dir'] = os.path.join(out_info['base_dir'], 'build')
-        else:
-            for (dirpath, dirnames, filenames) in os.walk(out_info['base_dir']):
+            for (dirpath, dirnames, filenames) in os.walk(mod_info['base_dir']):
                 if 'CMakeCache.txt' in filenames:
-                    out_info['build_dir'] = dirpath
-                    break
+                    return dirpath
+        if has_build_dir:
+            return os.path.join(mod_info['base_dir'], 'build')
+        return None
+
+    def _get_include_dirs(self, mod_info):
+        """ Figure out include dirs for the make process. """
+        inc_dirs = []
         try:
-            cmakecache_fid = open(os.path.join(out_info['build_dir'], 'CMakeCache.txt'))
+            cmakecache_fid = open(os.path.join(mod_info['build_dir'], 'CMakeCache.txt'))
             for line in cmakecache_fid:
                 if line.find('GNURADIO_CORE_INCLUDE_DIRS:PATH') != -1:
-                    out_info['incdirs'] += line.replace('GNURADIO_CORE_INCLUDE_DIRS:PATH=', '').strip().split(';')
+                    inc_dirs += line.replace('GNURADIO_CORE_INCLUDE_DIRS:PATH=', '').strip().split(';')
                 if line.find('GRUEL_INCLUDE_DIRS:PATH') != -1:
-                    out_info['incdirs'] += line.replace('GRUEL_INCLUDE_DIRS:PATH=', '').strip().split(';')
+                    inc_dirs += line.replace('GRUEL_INCLUDE_DIRS:PATH=', '').strip().split(';')
         except IOError:
             pass
-        if self.options.python_readable:
-            print str(out_info)
-        else:
-            self._pretty_print(out_info)
+        return inc_dirs
 
-    def _pretty_print(self, out_info):
+    def _pretty_print(self, mod_info):
         """ Output the module info in human-readable format """
         index_names = {'base_dir': 'Base directory',
                        'modname':  'Module name',
                        'build_dir': 'Build directory',
                        'incdirs': 'Include directories'}
-        for key in out_info.keys():
-            print '%19s: %s' % (index_names[key], out_info[key])
+        for key in mod_info.keys():
+            print '%19s: %s' % (index_names[key], mod_info[key])
 
 ### Add new block module #####################################################
 class ModToolAdd(ModTool):
@@ -2820,5 +2826,8 @@ if __name__ == '__main__':
     if not ((sys.version_info[0] > 2) or
             (sys.version_info[0] == 2 and sys.version_info[1] >= 7)):
         print "Using Python < 2.7 possibly buggy. Ahem. Please send all complaints to /dev/null."
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
 
