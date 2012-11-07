@@ -44,13 +44,13 @@ namespace gr {
       ${blockname}_impl(${strip_default_values($arglist)});
       ~${blockname}_impl();
 
-#if $grblocktype == 'gr_block'
+#if $blocktype == 'general'
       // Where all the action really happens
       int general_work(int noutput_items,
 		       gr_vector_int &ninput_items,
 		       gr_vector_const_void_star &input_items,
 		       gr_vector_void_star &output_items);
-#else if $grblocktype == 'gr_hier_block2'
+#else if $blocktype == 'hier'
 #silent pass
 #else
       // Where all the action really happens
@@ -86,12 +86,22 @@ namespace gr {
       return gnuradio::get_initial_sptr (new ${blockname}_impl(${strip_arg_types($arglist)}));
     }
 
-#if $grblocktype == 'gr_sync_decimator'
+#if $blocktype == 'decimator'
 #set $decimation = ', <+decimation+>'
-#else if $grblocktype == 'gr_sync_interpolator'
+#else if $blocktype == 'interpolator'
 #set $decimation = ', <+interpolation+>'
 #else
 #set $decimation = ''
+#end if
+#if $blocktype == 'sink'
+#set $inputsig = '0, 0, 0'
+#else
+#set $inputsig = '<+MIN_IN+>, <+MAX_IN+>, sizeof (<+float+>)'
+#end if
+#if $blocktype == 'source'
+#set $outputsig = '0, 0, 0'
+#else
+#set $outputsig = '<+MIN_IN+>, <+MAX_IN+>, sizeof (<+float+>)'
 #end if
     /*
      * The private constructor
@@ -100,7 +110,7 @@ namespace gr {
       : ${grblocktype}("${blockname}",
 		      gr_make_io_signature($inputsig),
 		      gr_make_io_signature($outputsig)$decimation)
-#if $grblocktype == 'gr_hier_block2'
+#if $blocktype == 'hier'
     {
         connect(self(), 0, d_firstblock, 0);
         // connect other blocks
@@ -117,7 +127,7 @@ namespace gr {
     {
     }
 
-#if $grblocktype == 'gr_block'
+#if $blocktype == 'general'
     int
     ${blockname}_impl::general_work (int noutput_items,
                        gr_vector_int &ninput_items,
@@ -136,7 +146,7 @@ namespace gr {
         return noutput_items;
     }
 
-#else if $grblocktype == 'gr_hier_block2'
+#else if $blocktype == 'hier'
 #silent pass
 #else
     int
@@ -183,13 +193,13 @@ namespace gr {
        typedef boost::shared_ptr<${blockname}> sptr;
 
        /*!
-	* \\brief Return a shared_ptr to a new instance of ${modname}::${blockname}.
-	*
-	* To avoid accidental use of raw pointers, ${modname}::${blockname}'s
-	* constructor is in a private implementation
-	* class. ${modname}::${blockname}::make is the public interface for
-	* creating new instances.
-	*/
+        * \\brief Return a shared_ptr to a new instance of ${modname}::${blockname}.
+        *
+        * To avoid accidental use of raw pointers, ${modname}::${blockname}'s
+        * constructor is in a private implementation
+        * class. ${modname}::${blockname}::make is the public interface for
+        * creating new instances.
+        */
        static sptr make($arglist);
     };
 
@@ -350,14 +360,24 @@ Templates['hier_python'] = '''${str_to_python_comment($license)}
 
 from gnuradio import gr
 
+#if $blocktype == 'sink'
+#set $inputsig = '0, 0, 0'
+#else
+#set $inputsig = '<+MIN_IN+>, <+MAX_IN+>, gr.sizeof_<+float+>'
+#end if
+#if $blocktype == 'source'
+#set $outputsig = '0, 0, 0'
+#else
+#set $outputsig = '<+MIN_OUT+>, <+MAX_OUT+>, gr.sizeof_<+float+>'
+#end if
 class ${blockname}(gr.hier_block2):
     def __init__(self#if $arglist == '' then '' else ', '#$arglist):
     """
     docstring
-	"""
-        gr.hier_block2.__init__(self, "$blockname",
-				gr.io_signature(${inputsig}),  # Input signature
-				gr.io_signature(${outputsig})) # Output signature
+    """
+    gr.hier_block2.__init__(self, "$blockname",
+        gr.io_signature(${inputsig}),  # Input signature
+        gr.io_signature(${outputsig})) # Output signature
 
         # Define blocks and connect them
         self.connect()
