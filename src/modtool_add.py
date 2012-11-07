@@ -17,7 +17,7 @@ class ModToolAdd(ModTool):
     name = 'add'
     aliases = ('insert',)
     _block_types = ('sink', 'source', 'sync', 'decimator', 'interpolator',
-                    'general', 'hiercpp', 'hierpython', 'noblock')
+                    'general', 'hier', 'noblock')
     def __init__(self):
         ModTool.__init__(self)
         self._info['inputsig'] = "<+MIN_IN+>, <+MAX_IN+>, sizeof (<+float+>)"
@@ -41,6 +41,8 @@ class ModToolAdd(ModTool):
                 help="If given, C++ QA code is automatically added if possible.")
         ogroup.add_option("--skip-cmakefiles", action="store_true", default=False,
                 help="If given, only source files are written, but CMakeLists.txt files are left unchanged.")
+        ogroup.add_option("-l", "--lang", type="choice", choices=('cpp', 'c++', 'python'),
+                default='cpp', help="Language (cpp or python)")
         parser.add_option_group(ogroup)
         return parser
 
@@ -54,10 +56,14 @@ class ModToolAdd(ModTool):
                 if self._info['blocktype'] not in self._block_types:
                     print 'Must be one of ' + str(self._block_types)
         print "Code is of type: " + self._info['blocktype']
+        self._info['lang'] = options.lang
+        if self._info['lang'] == 'c++':
+            self._info['lang'] = 'cpp'
+        print "Language: %s" % {'cpp': 'C++', 'python': 'Python'}[self._info['lang']]
 
-        if (not self._has_subdirs['lib'] and self._info['blocktype'] != 'hierpython') or \
-           (not self._has_subdirs['python'] and self._info['blocktype'] == 'hierpython'):
-            print "Can't do anything if the relevant subdir is missing. See ya."
+        if (((not self._has_subdirs['lib'] or self._skip_subdirs['lib']) and self._info['lang'] == 'cpp')
+             or ((not self._has_subdirs['python'] or self._skip_subdirs['python']) and self._info['lang'] == 'python')):
+            print "Missing or skipping relevant subdir."
             sys.exit(1)
 
         if self._info['blockname'] is None:
@@ -118,8 +124,15 @@ class ModToolAdd(ModTool):
 
     def run(self):
         """ Go, go, go. """
-        if self._info['blocktype'] != 'hierpython' and not self._skip_subdirs['lib']:
+        if self._info['lang'] == 'cpp':
             self._run_lib()
+        has_swig = (
+                self._info['lang'] == 'cpp'
+                and self._info['blocktype'] != 'noblock'
+                and self._has_subdirs['swig']
+                and not self._skip_subdirs['swig']
+        )
+
         has_swig = self._info['blocktype'] in (
                 'sink',
                 'source',
@@ -132,10 +145,15 @@ class ModToolAdd(ModTool):
             self._run_swig()
         if self._add_py_qa:
             self._run_python_qa()
-        if self._info['blocktype'] == 'hierpython':
+        if self._info['blocktype'] == 'hier' and self._info['lang'] == 'python':
             self._run_python_hierblock()
-        if (not self._skip_subdirs['grc'] and self._has_subdirs['grc'] and
-            (self._info['blocktype'] == 'hierpython' or has_swig)):
+        if (
+                not self._skip_subdirs['grc']
+                and self._has_subdirs['grc']
+                and ((self._info['blocktype'] == 'hier' and self._info['lang'] == 'python')
+                      or has_swig
+                    )
+           ):
             self._run_grc()
 
 
@@ -150,7 +168,7 @@ class ModToolAdd(ModTool):
         """
         print "Traversing lib..."
         if self._info['blocktype'] in ('source', 'sink', 'sync', 'decimator',
-                                       'interpolator', 'general', 'hiercpp'):
+                                       'interpolator', 'general', 'hier'):
             fname_impl_h = self._info['blockname'] + '_impl.h'
             fname_cc = self._info['blockname'] + '_impl.cc'
             fname_h = self._info['blockname'] + '.h'
